@@ -249,7 +249,7 @@ const TicketDetail = () => {
             <h2 className="font-semibold text-gray-900 mb-4">Ticket Details</h2>
             <div className="space-y-4">
               <div className="flex items-start gap-4">
-                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
                   <Tag size={18} className="text-gray-500" />
                 </div>
                 <div>
@@ -259,7 +259,7 @@ const TicketDetail = () => {
               </div>
 
               <div className="flex items-start gap-4">
-                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
                   <User size={18} className="text-gray-500" />
                 </div>
                 <div>
@@ -272,7 +272,7 @@ const TicketDetail = () => {
 
               {ticket.departments && (
                 <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
                     <Building2 size={18} className="text-gray-500" />
                   </div>
                   <div>
@@ -286,7 +286,7 @@ const TicketDetail = () => {
 
               {ticket.personnel && (
                 <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
                     {ticket.personnel.avatar_url ? (
                       <img
                         src={ticket.personnel.avatar_url}
@@ -307,7 +307,7 @@ const TicketDetail = () => {
               )}
 
               <div className="flex items-start gap-4">
-                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
                   <Calendar size={18} className="text-gray-500" />
                 </div>
                 <div>

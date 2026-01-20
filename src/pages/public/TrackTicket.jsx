@@ -203,7 +203,7 @@ const TrackTicket = () => {
           <div className="space-y-4">
             {/* Subject */}
             <div className="flex items-start gap-4 p-4 bg-gray-50 rounded-xl">
-              <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center flex-shrink-0">
+              <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0">
                 <Tag size={20} className="text-gray-500" />
               </div>
               <div>
@@ -215,7 +215,7 @@ const TrackTicket = () => {
             {/* Department */}
             {ticket.departments && (
               <div className="flex items-start gap-4 p-4 bg-gray-50 rounded-xl">
-                <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0">
                   <FileText size={20} className="text-gray-500" />
                 </div>
                 <div>
@@ -230,7 +230,7 @@ const TrackTicket = () => {
             {/* Received By */}
             {personnel && (
               <div className="flex items-start gap-4 p-4 bg-gray-50 rounded-xl">
-                <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
+                <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
                   {personnel.avatar_url ? (
                     <img
                       src={personnel.avatar_url}
@@ -250,7 +250,7 @@ const TrackTicket = () => {
 
             {/* Date Received */}
             <div className="flex items-start gap-4 p-4 bg-gray-50 rounded-xl">
-              <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center flex-shrink-0">
+              <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0">
                 <Calendar size={20} className="text-gray-500" />
               </div>
               <div>
