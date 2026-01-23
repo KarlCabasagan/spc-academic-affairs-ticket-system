@@ -1,18 +1,23 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabaseClient";
-import { Plus, UserCog, User, Shield, X } from "lucide-react";
+import {
+  UserCog,
+  User,
+  Shield,
+  Power,
+  Archive,
+  ArchiveRestore,
+  Trash2,
+  ChevronDown,
+} from "lucide-react";
 import toast from "react-hot-toast";
+import { useAuth } from "../../contexts/AuthContext";
 
 const Team = () => {
+  const { isSuperAdmin, user } = useAuth();
   const [team, setTeam] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-    fullName: "",
-  });
-  const [submitting, setSubmitting] = useState(false);
+  const [filter, setFilter] = useState("active"); // active, inactive, archived, all
 
   const fetchTeam = async () => {
     try {
@@ -35,39 +40,116 @@ const Team = () => {
     fetchTeam();
   }, []);
 
-  const closeModal = () => {
-    setModalOpen(false);
-    setFormData({ email: "", password: "", fullName: "" });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!formData.email || !formData.password || !formData.fullName) return;
-
-    setSubmitting(true);
+  const updateUserRole = async (userId, newRole) => {
+    if (!isSuperAdmin) return;
     try {
-      // Create new user via Supabase Auth
-      const { data, error } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          data: {
-            full_name: formData.fullName,
-          },
-        },
-      });
+      const { error } = await supabase
+        .from("profiles")
+        .update({ role: newRole })
+        .eq("id", userId);
 
       if (error) throw error;
-
-      toast.success("Admin account created! They can now sign in.");
-      closeModal();
+      toast.success(`Role updated to ${newRole.replace("_", " ")}`);
       fetchTeam();
     } catch (error) {
-      console.error("Error creating admin:", error);
-      toast.error(error.message || "Failed to create admin account");
-    } finally {
-      setSubmitting(false);
+      console.error("Error updating role:", error);
+      toast.error("Failed to update role");
     }
+  };
+
+  const toggleActive = async (member) => {
+    if (!isSuperAdmin) return;
+    try {
+      const newStatus = !member.is_active;
+      const { error } = await supabase
+        .from("profiles")
+        .update({ is_active: newStatus })
+        .eq("id", member.id);
+
+      if (error) throw error;
+      toast.success(newStatus ? "User activated" : "User deactivated");
+      fetchTeam();
+    } catch (error) {
+      console.error("Error toggling active status:", error);
+      toast.error("Failed to update status");
+    }
+  };
+
+  const toggleArchive = async (member) => {
+    if (!isSuperAdmin) return;
+    try {
+      const newStatus = !member.is_archived;
+      const { error } = await supabase
+        .from("profiles")
+        .update({ is_archived: newStatus, is_active: newStatus ? false : true })
+        .eq("id", member.id);
+
+      if (error) throw error;
+      toast.success(newStatus ? "User archived" : "User unarchived");
+      fetchTeam();
+    } catch (error) {
+      console.error("Error toggling archive status:", error);
+      toast.error("Failed to update status");
+    }
+  };
+
+  const deleteUser = async (member) => {
+    if (!isSuperAdmin || !member.is_archived) return;
+    if (
+      !confirm(
+        `Are you sure you want to permanently delete "${member.full_name}"? This action cannot be undone.`,
+      )
+    )
+      return;
+
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .delete()
+        .eq("id", member.id);
+
+      if (error) throw error;
+      toast.success("User deleted permanently");
+      fetchTeam();
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      toast.error("Failed to delete user");
+    }
+  };
+
+  const filteredTeam = team.filter((member) => {
+    switch (filter) {
+      case "active":
+        return member.is_active && !member.is_archived;
+      case "inactive":
+        return !member.is_active && !member.is_archived;
+      case "archived":
+        return member.is_archived;
+      default:
+        return true;
+    }
+  });
+
+  const getStatusBadge = (member) => {
+    if (member.is_archived) {
+      return (
+        <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
+          Archived
+        </span>
+      );
+    }
+    if (!member.is_active) {
+      return (
+        <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-600 rounded-full">
+          Inactive
+        </span>
+      );
+    }
+    return (
+      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-600 rounded-full">
+        Active
+      </span>
+    );
   };
 
   if (loading) {
@@ -88,20 +170,56 @@ const Team = () => {
             Manage admin accounts and access.
           </p>
         </div>
-        <button onClick={() => setModalOpen(true)} className="btn-primary">
-          <Plus size={18} />
-          <span>Add Admin</span>
-        </button>
+      </div>
+
+      {/* Filter Tabs */}
+      <div className="flex gap-2 border-b border-gray-200 pb-2">
+        {[
+          { key: "active", label: "Active" },
+          { key: "inactive", label: "Inactive" },
+          { key: "archived", label: "Archived" },
+          { key: "all", label: "All" },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setFilter(tab.key)}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              filter === tab.key
+                ? "bg-maroon-700 text-white"
+                : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            {tab.label}
+            <span className="ml-2 text-xs opacity-75">
+              (
+              {
+                team.filter((m) => {
+                  switch (tab.key) {
+                    case "active":
+                      return m.is_active && !m.is_archived;
+                    case "inactive":
+                      return !m.is_active && !m.is_archived;
+                    case "archived":
+                      return m.is_archived;
+                    default:
+                      return true;
+                  }
+                }).length
+              }
+              )
+            </span>
+          </button>
+        ))}
       </div>
 
       {/* Team List */}
       <div className="card">
-        {team.length > 0 ? (
+        {filteredTeam.length > 0 ? (
           <div className="divide-y divide-gray-100">
-            {team.map((member) => (
+            {filteredTeam.map((member) => (
               <div
                 key={member.id}
-                className="flex items-center justify-between p-4 hover:bg-gray-50"
+                className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-gray-50 gap-4"
               >
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center overflow-hidden">
@@ -119,118 +237,126 @@ const Team = () => {
                     <p className="font-medium text-gray-900">
                       {member.full_name}
                     </p>
-                    <p className="text-sm text-gray-500 capitalize">
-                      {member.role?.replace("_", " ")}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      {getStatusBadge(member)}
+                      <span
+                        className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                          member.role === "super_admin"
+                            ? "bg-maroon-100 text-maroon-700"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        <Shield size={12} />
+                        {member.role === "super_admin"
+                          ? "Super Admin"
+                          : "Admin"}
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <div
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${
-                    member.role === "super_admin"
-                      ? "bg-maroon-100 text-maroon-700"
-                      : "bg-gray-100 text-gray-600"
-                  }`}
-                >
-                  <Shield size={14} />
-                  <span>
-                    {member.role === "super_admin" ? "Super Admin" : "Admin"}
-                  </span>
-                </div>
+
+                {/* Actions - Only for super admin and not self */}
+                {isSuperAdmin && member.id !== user?.id && (
+                  <div className="flex items-center gap-2 ml-auto sm:ml-0">
+                    {/* Role Dropdown */}
+                    {!member.is_archived && (
+                      <div className="relative group">
+                        <button className="btn-secondary text-sm flex items-center gap-1">
+                          <span>
+                            {member.role === "super_admin"
+                              ? "Super Admin"
+                              : "Admin"}
+                          </span>
+                          <ChevronDown size={14} />
+                        </button>
+                        <div className="absolute right-0 mt-1 w-36 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                          <button
+                            onClick={() => updateUserRole(member.id, "admin")}
+                            className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${
+                              member.role === "admin"
+                                ? "text-maroon-700 font-medium"
+                                : "text-gray-700"
+                            }`}
+                          >
+                            Admin
+                          </button>
+                          <button
+                            onClick={() =>
+                              updateUserRole(member.id, "super_admin")
+                            }
+                            className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${
+                              member.role === "super_admin"
+                                ? "text-maroon-700 font-medium"
+                                : "text-gray-700"
+                            }`}
+                          >
+                            Super Admin
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Activate/Deactivate */}
+                    {!member.is_archived && (
+                      <button
+                        onClick={() => toggleActive(member)}
+                        className={`p-2 rounded-lg transition-colors ${
+                          member.is_active
+                            ? "text-gray-500 hover:text-red-600 hover:bg-red-50"
+                            : "text-gray-500 hover:text-green-600 hover:bg-green-50"
+                        }`}
+                        title={member.is_active ? "Deactivate" : "Activate"}
+                      >
+                        <Power size={18} />
+                      </button>
+                    )}
+
+                    {/* Archive/Unarchive */}
+                    <button
+                      onClick={() => toggleArchive(member)}
+                      className={`p-2 rounded-lg transition-colors ${
+                        member.is_archived
+                          ? "text-gray-500 hover:text-blue-600 hover:bg-blue-50"
+                          : "text-gray-500 hover:text-yellow-600 hover:bg-yellow-50"
+                      }`}
+                      title={member.is_archived ? "Unarchive" : "Archive"}
+                    >
+                      {member.is_archived ? (
+                        <ArchiveRestore size={18} />
+                      ) : (
+                        <Archive size={18} />
+                      )}
+                    </button>
+
+                    {/* Delete (only for archived) */}
+                    {member.is_archived && (
+                      <button
+                        onClick={() => deleteUser(member)}
+                        className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Delete permanently"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Self indicator */}
+                {member.id === user?.id && (
+                  <span className="text-xs text-gray-400 italic">You</span>
+                )}
               </div>
             ))}
           </div>
         ) : (
           <div className="p-8 text-center">
             <UserCog size={40} className="text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500">No team members yet</p>
+            <p className="text-gray-500">
+              No {filter !== "all" ? filter : ""} team members
+            </p>
           </div>
         )}
       </div>
-
-      {/* Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={closeModal} />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md animate-slideUp">
-            <div className="flex items-center justify-between p-6 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-900">Add Admin</h2>
-              <button
-                onClick={closeModal}
-                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label htmlFor="fullName" className="label">
-                  Full Name
-                </label>
-                <input
-                  id="fullName"
-                  type="text"
-                  value={formData.fullName}
-                  onChange={(e) =>
-                    setFormData({ ...formData, fullName: e.target.value })
-                  }
-                  className="input"
-                  placeholder="Enter full name"
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="email" className="label">
-                  Email Address
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) =>
-                    setFormData({ ...formData, email: e.target.value })
-                  }
-                  className="input"
-                  placeholder="admin@example.com"
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="password" className="label">
-                  Password
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) =>
-                    setFormData({ ...formData, password: e.target.value })
-                  }
-                  className="input"
-                  placeholder="Minimum 6 characters"
-                  minLength={6}
-                  required
-                />
-              </div>
-              <div className="pt-2 flex gap-3">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="btn-secondary flex-1"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="btn-primary flex-1"
-                >
-                  {submitting ? "Creating..." : "Create Admin"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

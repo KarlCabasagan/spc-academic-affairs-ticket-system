@@ -47,6 +47,18 @@ const Profile = () => {
     return data.publicUrl;
   };
 
+  // Extract filename from avatar URL
+  const extractFileName = (url) => {
+    if (!url) return null;
+    try {
+      const urlObj = new URL(url);
+      const pathParts = urlObj.pathname.split("/");
+      return pathParts[pathParts.length - 1];
+    } catch {
+      return null;
+    }
+  };
+
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!fullName.trim()) return;
@@ -56,6 +68,13 @@ const Profile = () => {
       let avatarUrl = profile?.avatar_url;
 
       if (avatarFile) {
+        // Delete old avatar if exists
+        if (profile?.avatar_url) {
+          const oldFileName = extractFileName(profile.avatar_url);
+          if (oldFileName) {
+            await supabase.storage.from("avatars").remove([oldFileName]);
+          }
+        }
         avatarUrl = await uploadAvatar(avatarFile);
       }
 

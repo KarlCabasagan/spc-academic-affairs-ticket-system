@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import {
@@ -15,6 +15,8 @@ import {
   MessageSquare,
   Trash2,
   History,
+  X,
+  MapPin,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -27,6 +29,11 @@ const TicketDetail = () => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+
+  // Release form state
+  const [showReleaseModal, setShowReleaseModal] = useState(false);
+  const [releasedTo, setReleasedTo] = useState("");
+  const [savingRelease, setSavingRelease] = useState(false);
 
   const statuses = [
     {
@@ -104,14 +111,33 @@ const TicketDetail = () => {
     fetchTicket();
   }, [id]);
 
-  const updateStatus = async (newStatus) => {
+  const handleStatusClick = (newStatus) => {
     if (ticket.status === newStatus) return;
 
+    // Show release modal for "Approved and released" status
+    if (newStatus === "Approved and released") {
+      setReleasedTo("");
+      setShowReleaseModal(true);
+      return;
+    }
+
+    // Otherwise update status directly
+    updateStatus(newStatus);
+  };
+
+  const updateStatus = async (newStatus, releaseData = null) => {
     setUpdating(true);
     try {
+      const updateData = { status: newStatus };
+
+      if (releaseData) {
+        updateData.released_to = releaseData.released_to;
+        updateData.released_at = releaseData.released_at;
+      }
+
       const { error } = await supabase
         .from("tickets")
-        .update({ status: newStatus })
+        .update(updateData)
         .eq("id", ticket.id);
 
       if (error) throw error;
@@ -123,6 +149,26 @@ const TicketDetail = () => {
       toast.error("Failed to update status");
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const handleReleaseSubmit = async (e) => {
+    e.preventDefault();
+    if (!releasedTo.trim()) {
+      toast.error("Please enter where the document is released to");
+      return;
+    }
+
+    setSavingRelease(true);
+    try {
+      await updateStatus("Approved and released", {
+        released_to: releasedTo.trim(),
+        released_at: new Date().toISOString(),
+      });
+      setShowReleaseModal(false);
+      setReleasedTo("");
+    } finally {
+      setSavingRelease(false);
     }
   };
 
@@ -208,7 +254,7 @@ const TicketDetail = () => {
         )}
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid lg:grid-cols-3 gap-6 items-start">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
           {/* Status Update */}
@@ -221,7 +267,7 @@ const TicketDetail = () => {
                 return (
                   <button
                     key={status.value}
-                    onClick={() => updateStatus(status.value)}
+                    onClick={() => handleStatusClick(status.value)}
                     disabled={updating || isActive}
                     className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${
                       isActive
@@ -318,6 +364,27 @@ const TicketDetail = () => {
                 </div>
               </div>
 
+              {/* Release Information */}
+              {ticket.status === "Approved and released" &&
+                ticket.released_to && (
+                  <div className="flex items-start gap-4">
+                    <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center shrink-0">
+                      <MapPin size={18} className="text-green-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Released To</p>
+                      <p className="font-medium text-gray-900">
+                        {ticket.released_to}
+                      </p>
+                      {ticket.released_at && (
+                        <p className="text-sm text-gray-500 mt-1">
+                          {formatDate(ticket.released_at)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
               {ticket.remarks && (
                 <div className="p-4 bg-gray-50 rounded-xl">
                   <div className="flex items-center gap-2 mb-2">
@@ -355,7 +422,7 @@ const TicketDetail = () => {
               <h2 className="font-semibold text-gray-900">Activity Log</h2>
             </div>
             {logs.length > 0 ? (
-              <div className="space-y-4">
+              <div className="space-y-4 max-h-[300px] overflow-y-auto">
                 {logs.map((log) => (
                   <div
                     key={log.id}
@@ -391,6 +458,65 @@ const TicketDetail = () => {
           </div>
         </div>
       </div>
+
+      {/* Release Form Modal */}
+      {showReleaseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setShowReleaseModal(false)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md animate-slideUp">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Release Document
+              </h2>
+              <button
+                onClick={() => setShowReleaseModal(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleReleaseSubmit} className="p-6 space-y-4">
+              <div>
+                <label htmlFor="releasedTo" className="label">
+                  Released To
+                </label>
+                <input
+                  id="releasedTo"
+                  type="text"
+                  value={releasedTo}
+                  onChange={(e) => setReleasedTo(e.target.value)}
+                  className="input"
+                  placeholder="Enter recipient/location"
+                  required
+                  autoFocus
+                />
+                <p className="text-sm text-gray-400 mt-2">
+                  Specify where or to whom the document is being released.
+                </p>
+              </div>
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowReleaseModal(false)}
+                  className="btn-secondary flex-1"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingRelease || !releasedTo.trim()}
+                  className="btn-primary flex-1"
+                >
+                  {savingRelease ? "Saving..." : "Confirm Release"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

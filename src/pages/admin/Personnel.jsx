@@ -80,6 +80,18 @@ const Personnel = () => {
     return data.publicUrl;
   };
 
+  // Extract filename from avatar URL
+  const extractFileName = (url) => {
+    if (!url) return null;
+    try {
+      const urlObj = new URL(url);
+      const pathParts = urlObj.pathname.split("/");
+      return pathParts[pathParts.length - 1];
+    } catch {
+      return null;
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.name.trim()) return;
@@ -90,6 +102,13 @@ const Personnel = () => {
 
       // Upload new avatar if selected
       if (avatarFile) {
+        // Delete old avatar if exists (when editing)
+        if (editingPersonnel?.avatar_url) {
+          const oldFileName = extractFileName(editingPersonnel.avatar_url);
+          if (oldFileName) {
+            await supabase.storage.from("avatars").remove([oldFileName]);
+          }
+        }
         avatarUrl = await uploadAvatar(avatarFile);
       }
 

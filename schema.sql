@@ -388,3 +388,51 @@ INSERT INTO subjects (name) VALUES
   ('Enrollment Concern'),
   ('Others')
 ON CONFLICT (name) DO NOTHING;
+
+-- =====================================================
+-- SCHEMA UPDATES (Run these to update existing database)
+-- =====================================================
+
+-- Add status columns to profiles table
+ALTER TABLE profiles 
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true,
+  ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT false;
+
+-- Add release tracking columns to tickets table
+ALTER TABLE tickets 
+  ADD COLUMN IF NOT EXISTS released_to TEXT,
+  ADD COLUMN IF NOT EXISTS released_at TIMESTAMPTZ;
+
+-- RLS policy for super_admin to update any profile
+DROP POLICY IF EXISTS "Super admin can update any profile" ON profiles;
+CREATE POLICY "Super admin can update any profile"
+  ON profiles FOR UPDATE
+  TO authenticated
+  USING (
+    auth.uid() = id OR
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE id = auth.uid() AND role = 'super_admin'
+    )
+  );
+
+-- RLS policy for super_admin to delete archived profiles
+DROP POLICY IF EXISTS "Super admin can delete archived profiles" ON profiles;
+CREATE POLICY "Super admin can delete archived profiles"
+  ON profiles FOR DELETE
+  TO authenticated
+  USING (
+    is_archived = true AND
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE id = auth.uid() AND role = 'super_admin'
+    )
+  );
+
+-- Update storage policy to allow authenticated users to delete avatars
+DROP POLICY IF EXISTS "Authenticated users can delete avatars" ON storage.objects;
+CREATE POLICY "Authenticated users can delete avatars"
+  ON storage.objects FOR DELETE
+  TO authenticated
+  USING (bucket_id = 'avatars');
+
