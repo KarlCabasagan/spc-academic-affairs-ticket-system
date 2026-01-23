@@ -20,9 +20,11 @@ const LandingPage = () => {
         <div className="w-full max-w-2xl mx-auto text-center">
           {/* Icon */}
           <div className="mb-8">
-            <div className="w-20 h-20 bg-maroon-700 rounded-3xl flex items-center justify-center mx-auto shadow-lg">
-              <FileText size={40} className="text-white" />
-            </div>
+            <img
+              src="/icon-192.png"
+              alt="SPC Logo"
+              className="w-20 h-20 rounded-3xl mx-auto shadow-lg object-cover"
+            />
           </div>
 
           {/* Title */}

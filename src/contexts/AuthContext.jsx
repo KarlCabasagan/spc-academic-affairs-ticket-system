@@ -132,6 +132,22 @@ export const AuthProvider = ({ children }) => {
   // Check if user is super admin
   const isSuperAdmin = profile?.role === "super_admin";
 
+  // Reset password - send email
+  const resetPassword = async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) throw error;
+  };
+
+  // Update password - after user clicks reset link
+  const updatePassword = async (newPassword) => {
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+    if (error) throw error;
+  };
+
   const value = {
     user,
     profile,
@@ -140,6 +156,8 @@ export const AuthProvider = ({ children }) => {
     signUp,
     signOut,
     updateProfile,
+    resetPassword,
+    updatePassword,
     isSuperAdmin,
     refreshProfile: () => user && fetchProfile(user.id),
   };

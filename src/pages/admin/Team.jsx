@@ -183,17 +183,18 @@ const Team = () => {
       </div>
 
       {/* Search Bar */}
-      <div className="relative">
+      <div className="relative max-w-md">
         <Search
           size={18}
-          className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+          className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
         />
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search by name..."
-          className="input pl-12 w-full max-w-md"
+          className="input w-full"
+          style={{ paddingLeft: "3rem" }}
         />
       </div>
 

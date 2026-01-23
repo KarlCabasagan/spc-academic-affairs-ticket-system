@@ -13,6 +13,7 @@ import TrackTicket from "./pages/public/TrackTicket";
 
 // Auth Pages
 import Login from "./pages/auth/Login";
+import ResetPassword from "./pages/auth/ResetPassword";
 
 // Admin Pages
 import Dashboard from "./pages/admin/Dashboard";
@@ -39,6 +40,7 @@ function App() {
 
           {/* Auth Routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* Protected Admin Routes */}
           <Route

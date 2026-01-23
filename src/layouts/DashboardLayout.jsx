@@ -86,13 +86,13 @@ const DashboardLayout = () => {
         {/* Sidebar Header */}
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-100">
           <Link to="/admin/dashboard" className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-maroon-700 rounded-xl flex items-center justify-center">
-              <span className="text-white font-bold text-sm">SPC</span>
-            </div>
+            <img
+              src="/icon-192.png"
+              alt="SPC Logo"
+              className="w-10 h-10 rounded-xl object-cover"
+            />
             <div>
-              <h1 className="font-semibold text-gray-900 text-sm">
-                Academic Affairs
-              </h1>
+              <h1 className="font-semibold text-gray-900 text-sm">OVPAA</h1>
               <p className="text-xs text-gray-500">Ticket System</p>
             </div>
           </Link>

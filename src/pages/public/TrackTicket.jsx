@@ -86,6 +86,31 @@ const TrackTicket = () => {
     }
   }, [ticketCode]);
 
+  // Real-time subscription for ticket updates
+  useEffect(() => {
+    if (!ticket?.id) return;
+
+    const subscription = supabase
+      .channel(`public-ticket-${ticket.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "tickets",
+          filter: `id=eq.${ticket.id}`,
+        },
+        (payload) => {
+          setTicket((prev) => ({ ...prev, ...payload.new }));
+        },
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [ticket?.id]);
+
   const getStatusConfig = (status) => {
     switch (status) {
       case "Pending":

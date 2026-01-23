@@ -25,47 +25,67 @@ const Dashboard = () => {
   const [recentTickets, setRecentTickets] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const fetchDashboardData = async () => {
+    try {
+      // Fetch all tickets for stats
+      const { data: tickets, error } = await supabase
+        .from("tickets")
+        .select("id, ticket_code, subject, status, created_at")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      // Calculate stats
+      const pending = tickets.filter((t) => t.status === "Pending").length;
+      const approved = tickets.filter(
+        (t) => t.status === "Approved and released",
+      ).length;
+      const disapproved = tickets.filter(
+        (t) => t.status === "Disapproved and revised",
+      ).length;
+      const recommended = tickets.filter(
+        (t) => t.status === "Approved and Recommended",
+      ).length;
+
+      setStats({
+        total: tickets.length,
+        pending,
+        approved,
+        disapproved,
+        recommended,
+      });
+
+      // Set recent tickets (last 5)
+      setRecentTickets(tickets.slice(0, 5));
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        // Fetch all tickets for stats
-        const { data: tickets, error } = await supabase
-          .from("tickets")
-          .select("id, ticket_code, subject, status, created_at")
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-
-        // Calculate stats
-        const pending = tickets.filter((t) => t.status === "Pending").length;
-        const approved = tickets.filter(
-          (t) => t.status === "Approved and released",
-        ).length;
-        const disapproved = tickets.filter(
-          (t) => t.status === "Disapproved and revised",
-        ).length;
-        const recommended = tickets.filter(
-          (t) => t.status === "Approved and Recommended",
-        ).length;
-
-        setStats({
-          total: tickets.length,
-          pending,
-          approved,
-          disapproved,
-          recommended,
-        });
-
-        // Set recent tickets (last 5)
-        setRecentTickets(tickets.slice(0, 5));
-      } catch (error) {
-        console.error("Error fetching dashboard data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchDashboardData();
+  }, []);
+
+  // Real-time subscription for ticket changes
+  useEffect(() => {
+    const subscription = supabase
+      .channel("dashboard-tickets")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "tickets",
+        },
+        () => fetchDashboardData(),
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const StatCard = ({ icon: Icon, label, value, color, bgColor }) => (

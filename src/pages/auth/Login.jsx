@@ -1,18 +1,26 @@
 import { useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { Eye, EyeOff, LogIn, UserPlus, ArrowLeft } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  LogIn,
+  UserPlus,
+  ArrowLeft,
+  KeyRound,
+  ArrowRight,
+} from "lucide-react";
 import toast from "react-hot-toast";
 
 const Login = () => {
-  const [isLogin, setIsLogin] = useState(true);
+  const [mode, setMode] = useState("login"); // login, signup, forgot
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, resetPassword } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -23,19 +31,46 @@ const Login = () => {
     setLoading(true);
 
     try {
-      if (isLogin) {
+      if (mode === "login") {
         await signIn(email, password);
         toast.success("Welcome back!");
-      } else {
+        navigate(from, { replace: true });
+      } else if (mode === "signup") {
         await signUp(email, password, fullName);
         toast.success("Account created! Please check your email to verify.");
+        navigate(from, { replace: true });
+      } else if (mode === "forgot") {
+        await resetPassword(email);
+        toast.success("Password reset link sent! Check your email.");
+        setMode("login");
       }
-      navigate(from, { replace: true });
     } catch (error) {
       console.error("Auth error:", error);
-      toast.error(error.message || "Authentication failed");
+      toast.error(error.message || "An error occurred");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const getTitle = () => {
+    switch (mode) {
+      case "signup":
+        return "Create Account";
+      case "forgot":
+        return "Reset Password";
+      default:
+        return "Welcome Back";
+    }
+  };
+
+  const getSubtitle = () => {
+    switch (mode) {
+      case "signup":
+        return "Register to manage tickets";
+      case "forgot":
+        return "Enter your email to receive a reset link";
+      default:
+        return "Sign in to access the dashboard";
     }
   };
 
@@ -55,22 +90,18 @@ const Login = () => {
         <div className="card p-8 animate-slideUp">
           {/* Header */}
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-maroon-700 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <span className="text-white font-bold text-xl">SPC</span>
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              {isLogin ? "Welcome Back" : "Create Account"}
-            </h1>
-            <p className="text-gray-500 mt-2">
-              {isLogin
-                ? "Sign in to access the dashboard"
-                : "Register to manage tickets"}
-            </p>
+            <img
+              src="/icon-192.png"
+              alt="SPC Logo"
+              className="w-16 h-16 rounded-2xl mx-auto mb-4 object-cover"
+            />
+            <h1 className="text-2xl font-bold text-gray-900">{getTitle()}</h1>
+            <p className="text-gray-500 mt-2">{getSubtitle()}</p>
           </div>
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
-            {!isLogin && (
+            {mode === "signup" && (
               <div>
                 <label htmlFor="fullName" className="label">
                   Full Name
@@ -82,7 +113,7 @@ const Login = () => {
                   onChange={(e) => setFullName(e.target.value)}
                   className="input"
                   placeholder="Enter your full name"
-                  required={!isLogin}
+                  required
                 />
               </div>
             )}
@@ -102,30 +133,45 @@ const Login = () => {
               />
             </div>
 
-            <div>
-              <label htmlFor="password" className="label">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="input pr-12"
-                  placeholder="Enter your password"
-                  required
-                  minLength={6}
-                />
+            {mode !== "forgot" && (
+              <div>
+                <label htmlFor="password" className="label">
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="input pr-12"
+                    placeholder="Enter your password"
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Forgot password link - only show on login */}
+            {mode === "login" && (
+              <div className="text-right">
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  onClick={() => setMode("forgot")}
+                  className="text-sm text-maroon-700 hover:text-maroon-800 font-medium"
                 >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  Forgot password?
                 </button>
               </div>
-            </div>
+            )}
 
             <button
               type="submit"
@@ -136,25 +182,42 @@ const Login = () => {
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  {isLogin ? <LogIn size={18} /> : <UserPlus size={18} />}
-                  {isLogin ? "Sign In" : "Create Account"}
+                  {mode === "login" && <LogIn size={18} />}
+                  {mode === "signup" && <UserPlus size={18} />}
+                  {mode === "forgot" && <KeyRound size={18} />}
+                  {mode === "login" && "Sign In"}
+                  {mode === "signup" && "Create Account"}
+                  {mode === "forgot" && "Send Reset Link"}
                 </>
               )}
             </button>
           </form>
 
-          {/* Toggle */}
-          <div className="mt-6 text-center">
-            <p className="text-gray-500 text-sm">
-              {isLogin ? "Don't have an account?" : "Already have an account?"}
+          {/* Toggle / Back links */}
+          <div className="mt-6 text-center space-y-2">
+            {mode === "forgot" ? (
               <button
                 type="button"
-                onClick={() => setIsLogin(!isLogin)}
-                className="text-maroon-700 hover:text-maroon-800 font-medium ml-1"
+                onClick={() => setMode("login")}
+                className="text-maroon-700 hover:text-maroon-800 font-medium text-sm inline-flex items-center gap-1"
               >
-                {isLogin ? "Sign up" : "Sign in"}
+                <ArrowLeft size={16} />
+                Back to Sign In
               </button>
-            </p>
+            ) : (
+              <p className="text-gray-500 text-sm">
+                {mode === "login"
+                  ? "Don't have an account?"
+                  : "Already have an account?"}
+                <button
+                  type="button"
+                  onClick={() => setMode(mode === "login" ? "signup" : "login")}
+                  className="text-maroon-700 hover:text-maroon-800 font-medium ml-1"
+                >
+                  {mode === "login" ? "Sign up" : "Sign in"}
+                </button>
+              </p>
+            )}
           </div>
         </div>
 

@@ -78,6 +78,26 @@ const Tickets = () => {
     fetchTickets();
   }, [statusFilter, departmentFilter, searchQuery]);
 
+  // Real-time subscription for ticket changes
+  useEffect(() => {
+    const subscription = supabase
+      .channel("tickets-list")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "tickets",
+        },
+        () => fetchTickets(),
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   const getStatusBadge = (status) => {
     switch (status) {
       case "Pending":
@@ -132,14 +152,15 @@ const Tickets = () => {
           <div className="relative flex-1">
             <Search
               size={18}
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
             />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by code, subject, or name..."
-              className="input pl-12"
+              className="input"
+              style={{ paddingLeft: "3rem" }}
             />
           </div>
 

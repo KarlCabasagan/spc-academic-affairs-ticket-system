@@ -18,7 +18,7 @@ const PublicLayout = () => {
               </div>
               <div className="hidden sm:block">
                 <h1 className="font-semibold text-gray-900">
-                  Academic Affairs
+                  Office of the Vice President for Academic Affairs
                 </h1>
                 <p className="text-xs text-gray-500">Ticket Tracking System</p>
               </div>

@@ -111,6 +111,39 @@ const TicketDetail = () => {
     fetchTicket();
   }, [id]);
 
+  // Real-time subscription for ticket and logs changes
+  useEffect(() => {
+    if (!id) return;
+
+    const subscription = supabase
+      .channel(`ticket-detail-${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "tickets",
+          filter: `id=eq.${id}`,
+        },
+        () => fetchTicket(),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "ticket_logs",
+          filter: `ticket_id=eq.${id}`,
+        },
+        () => fetchTicket(),
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [id]);
+
   const handleStatusClick = (newStatus) => {
     if (ticket.status === newStatus) return;
 
