@@ -24,6 +24,7 @@ import Subjects from "./pages/admin/Subjects";
 import Personnel from "./pages/admin/Personnel";
 import Team from "./pages/admin/Team";
 import Profile from "./pages/admin/Profile";
+import Reports from "./pages/admin/Reports";
 
 function App() {
   return (
@@ -52,6 +53,7 @@ function App() {
             <Route path="tickets" element={<Tickets />} />
             <Route path="tickets/create" element={<CreateTicket />} />
             <Route path="tickets/:id" element={<TicketDetail />} />
+            <Route path="reports" element={<Reports />} />
             <Route path="profile" element={<Profile />} />
 
             {/* Super Admin Only Routes */}

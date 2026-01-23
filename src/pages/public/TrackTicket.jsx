@@ -13,6 +13,7 @@ import {
   XCircle,
   ThumbsUp,
   Search,
+  MapPin,
 } from "lucide-react";
 
 const TrackTicket = () => {
@@ -40,6 +41,8 @@ const TrackTicket = () => {
             received_at,
             personnel_id,
             department_id,
+            released_to,
+            released_at,
             departments (name)
           `,
           )
@@ -260,6 +263,27 @@ const TrackTicket = () => {
                 </p>
               </div>
             </div>
+
+            {/* Release Info - Only show if released */}
+            {ticket.status === "Approved and released" &&
+              ticket.released_to && (
+                <div className="flex items-start gap-4 p-4 bg-green-50 rounded-xl border border-green-100">
+                  <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0">
+                    <MapPin size={20} className="text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-green-600">Released To</p>
+                    <p className="font-medium text-green-900">
+                      {ticket.released_to}
+                    </p>
+                    {ticket.released_at && (
+                      <p className="text-sm text-green-600 mt-1">
+                        {formatDate(ticket.released_at)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
 
             {/* Remarks */}
             {ticket.remarks && (

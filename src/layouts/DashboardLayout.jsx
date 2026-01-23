@@ -15,6 +15,7 @@ import {
   X,
   ChevronDown,
   User,
+  FileSpreadsheet,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -39,6 +40,7 @@ const DashboardLayout = () => {
     { name: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
     { name: "All Tickets", href: "/admin/tickets", icon: Ticket },
     { name: "Create Ticket", href: "/admin/tickets/create", icon: PlusCircle },
+    { name: "Reports", href: "/admin/reports", icon: FileSpreadsheet },
   ];
 
   const adminNavigation = [

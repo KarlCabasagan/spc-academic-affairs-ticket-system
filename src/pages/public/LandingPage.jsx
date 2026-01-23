@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Search, FileText, Clock, CheckCircle } from "lucide-react";
 
 const LandingPage = () => {
-  const [ticketCode, setTicketCode] = useState("");
+  const [ticketCode, setTicketCode] = useState("SPC-");
   const navigate = useNavigate();
 
   const handleSearch = (e) => {

@@ -89,7 +89,7 @@ const Dashboard = () => {
       case "Pending":
         return <span className="badge-pending">Pending</span>;
       case "Approved and released":
-        return <span className="badge-approved">Approved</span>;
+        return <span className="badge-approved">Released</span>;
       case "Disapproved and revised":
         return <span className="badge-disapproved">Disapproved</span>;
       case "Approved and Recommended":
@@ -143,17 +143,10 @@ const Dashboard = () => {
         />
         <StatCard
           icon={CheckCircle}
-          label="Approved"
+          label="Released"
           value={stats.approved}
           color="text-green-600"
           bgColor="bg-green-100"
-        />
-        <StatCard
-          icon={XCircle}
-          label="Disapproved"
-          value={stats.disapproved}
-          color="text-red-600"
-          bgColor="bg-red-100"
         />
         <StatCard
           icon={ThumbsUp}
@@ -161,6 +154,13 @@ const Dashboard = () => {
           value={stats.recommended}
           color="text-blue-600"
           bgColor="bg-blue-100"
+        />
+        <StatCard
+          icon={XCircle}
+          label="Disapproved"
+          value={stats.disapproved}
+          color="text-red-600"
+          bgColor="bg-red-100"
         />
       </div>
 

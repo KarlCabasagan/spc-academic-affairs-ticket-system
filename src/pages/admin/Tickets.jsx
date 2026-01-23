@@ -83,7 +83,7 @@ const Tickets = () => {
       case "Pending":
         return <span className="badge-pending">Pending</span>;
       case "Approved and released":
-        return <span className="badge-approved">Approved</span>;
+        return <span className="badge-approved">Released</span>;
       case "Disapproved and revised":
         return <span className="badge-disapproved">Disapproved</span>;
       case "Approved and Recommended":
@@ -139,7 +139,7 @@ const Tickets = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by code, subject, or name..."
-              className="input pl-11"
+              className="input pl-12"
             />
           </div>
 
