@@ -13,6 +13,25 @@ import {
   TrendingUp,
 } from "lucide-react";
 
+const StatCard = ({ icon, label, value, color, bgColor }) => {
+  const CardIcon = icon;
+  return (
+    <div className="card p-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm text-gray-500 mb-1">{label}</p>
+          <p className="text-3xl font-bold text-gray-900">{value}</p>
+        </div>
+        <div
+          className={`w-12 h-12 ${bgColor} rounded-xl flex items-center justify-center`}
+        >
+          <CardIcon size={24} className={color} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Dashboard = () => {
   const { profile } = useAuth();
   const [stats, setStats] = useState({
@@ -87,22 +106,6 @@ const Dashboard = () => {
       subscription.unsubscribe();
     };
   }, []);
-
-  const StatCard = ({ icon: Icon, label, value, color, bgColor }) => (
-    <div className="card p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-gray-500 mb-1">{label}</p>
-          <p className="text-3xl font-bold text-gray-900">{value}</p>
-        </div>
-        <div
-          className={`w-12 h-12 ${bgColor} rounded-xl flex items-center justify-center`}
-        >
-          <Icon size={24} className={color} />
-        </div>
-      </div>
-    </div>
-  );
 
   const getStatusBadge = (status) => {
     switch (status) {

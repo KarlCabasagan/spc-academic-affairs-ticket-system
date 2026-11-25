@@ -31,7 +31,7 @@ const DashboardLayout = () => {
       await signOut();
       toast.success("Signed out successfully");
       navigate("/");
-    } catch (error) {
+    } catch {
       toast.error("Failed to sign out");
     }
   };

@@ -8,7 +8,6 @@ import {
   UserPlus,
   ArrowLeft,
   KeyRound,
-  ArrowRight,
 } from "lucide-react";
 import toast from "react-hot-toast";
 

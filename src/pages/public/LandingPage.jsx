@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, FileText, Clock, CheckCircle } from "lucide-react";
+import { Search, Clock, CheckCircle } from "lucide-react";
 
 const LandingPage = () => {
   const [ticketCode, setTicketCode] = useState("SPC-");
