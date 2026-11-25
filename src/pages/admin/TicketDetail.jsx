@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../hooks/useAuth";
+import { TICKET_STATUSES, getStatusMeta } from "../../lib/ticketStatus";
+import { formatDateTime, formatShortDateTime } from "../../lib/dateUtils";
 import {
   ArrowLeft,
   Tag,
@@ -20,10 +22,33 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 
+const STATUS_STYLE_MAP = {
+  pending: {
+    icon: Clock,
+    color: "text-yellow-700",
+    bg: "bg-yellow-100",
+  },
+  approved: {
+    icon: CheckCircle,
+    color: "text-green-700",
+    bg: "bg-green-100",
+  },
+  disapproved: {
+    icon: XCircle,
+    color: "text-red-700",
+    bg: "bg-red-100",
+  },
+  recommended: {
+    icon: ThumbsUp,
+    color: "text-blue-700",
+    bg: "bg-blue-100",
+  },
+};
+
 const TicketDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { isSuperAdmin } = useAuth();
+  const { isSuperAdmin, user } = useAuth();
 
   const [ticket, setTicket] = useState(null);
   const [logs, setLogs] = useState([]);
@@ -35,38 +60,7 @@ const TicketDetail = () => {
   const [releasedTo, setReleasedTo] = useState("");
   const [savingRelease, setSavingRelease] = useState(false);
 
-  const statuses = [
-    {
-      value: "Pending",
-      label: "Pending",
-      icon: Clock,
-      color: "text-yellow-600",
-      bg: "bg-yellow-100",
-    },
-    {
-      value: "Approved and released",
-      label: "Approved & Released",
-      icon: CheckCircle,
-      color: "text-green-600",
-      bg: "bg-green-100",
-    },
-    {
-      value: "Disapproved and revised",
-      label: "Disapproved & Revised",
-      icon: XCircle,
-      color: "text-red-600",
-      bg: "bg-red-100",
-    },
-    {
-      value: "Approved and Recommended",
-      label: "Approved & Recommended",
-      icon: ThumbsUp,
-      color: "text-blue-600",
-      bg: "bg-blue-100",
-    },
-  ];
-
-  const fetchTicket = async () => {
+  const fetchTicket = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from("tickets")
@@ -84,7 +78,6 @@ const TicketDetail = () => {
       if (error) throw error;
       setTicket(data);
 
-      // Fetch logs
       const { data: logsData } = await supabase
         .from("ticket_logs")
         .select(
@@ -104,18 +97,17 @@ const TicketDetail = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, navigate]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     fetchTicket();
-  }, [id]);
+  }, [fetchTicket]);
 
   // Real-time subscription for ticket and logs changes
   useEffect(() => {
     if (!id) return;
 
-    const subscription = supabase
+    const channel = supabase
       .channel(`ticket-detail-${id}`)
       .on(
         "postgres_changes",
@@ -125,7 +117,9 @@ const TicketDetail = () => {
           table: "tickets",
           filter: `id=eq.${id}`,
         },
-        () => fetchTicket(),
+        () => {
+          fetchTicket();
+        },
       )
       .on(
         "postgres_changes",
@@ -135,37 +129,30 @@ const TicketDetail = () => {
           table: "ticket_logs",
           filter: `ticket_id=eq.${id}`,
         },
-        () => fetchTicket(),
+        () => {
+          fetchTicket();
+        },
       )
       .subscribe();
 
     return () => {
-      subscription.unsubscribe();
+      supabase.removeChannel(channel);
     };
-  }, [id]);
-
-  const handleStatusClick = (newStatus) => {
-    if (ticket.status === newStatus) return;
-
-    // Show release modal for "Approved and released" status
-    if (newStatus === "Approved and released") {
-      setReleasedTo("");
-      setShowReleaseModal(true);
-      return;
-    }
-
-    // Otherwise update status directly
-    updateStatus(newStatus);
-  };
+  }, [id, fetchTicket]);
 
   const updateStatus = async (newStatus, releaseData = null) => {
+    if (!ticket) return false;
+
     setUpdating(true);
     try {
       const updateData = { status: newStatus };
 
-      if (releaseData) {
+      if (newStatus === "Approved and released" && releaseData) {
         updateData.released_to = releaseData.released_to;
         updateData.released_at = releaseData.released_at;
+      } else if (ticket.status === "Approved and released") {
+        updateData.released_to = null;
+        updateData.released_at = null;
       }
 
       const { error } = await supabase
@@ -175,31 +162,72 @@ const TicketDetail = () => {
 
       if (error) throw error;
 
-      toast.success(`Status updated to "${newStatus}"`);
-      fetchTicket();
+      if (newStatus === "Approved and released" && releaseData?.released_to) {
+        const { error: logError } = await supabase.from("ticket_logs").insert({
+          ticket_id: ticket.id,
+          actor_id: user?.id || null,
+          action: `Released to "${releaseData.released_to}"`,
+        });
+        if (logError) {
+          console.warn("Failed to insert release log:", logError);
+        }
+      } else if (
+        ticket.status === "Approved and released" &&
+        ticket.released_to
+      ) {
+        const { error: logError } = await supabase.from("ticket_logs").insert({
+          ticket_id: ticket.id,
+          actor_id: user?.id || null,
+          action: "Cleared prior release record after status change",
+        });
+        if (logError) {
+          console.warn("Failed to insert release clear log:", logError);
+        }
+      }
+
+      const statusMeta = getStatusMeta(newStatus);
+      toast.success(`Status updated to "${statusMeta.label}"`);
+      await fetchTicket();
+      return true;
     } catch (error) {
       console.error("Error updating status:", error);
       toast.error("Failed to update status");
+      return false;
     } finally {
       setUpdating(false);
     }
   };
 
+  const handleStatusClick = (newStatus) => {
+    if (!ticket || ticket.status === newStatus) return;
+
+    if (newStatus === "Approved and released") {
+      setReleasedTo("");
+      setShowReleaseModal(true);
+      return;
+    }
+
+    updateStatus(newStatus);
+  };
+
   const handleReleaseSubmit = async (e) => {
     e.preventDefault();
-    if (!releasedTo.trim()) {
+    const recipient = releasedTo.trim();
+    if (!recipient) {
       toast.error("Please enter where the document is released to");
       return;
     }
 
     setSavingRelease(true);
     try {
-      await updateStatus("Approved and released", {
-        released_to: releasedTo.trim(),
+      const ok = await updateStatus("Approved and released", {
+        released_to: recipient,
         released_at: new Date().toISOString(),
       });
-      setShowReleaseModal(false);
-      setReleasedTo("");
+      if (ok) {
+        setShowReleaseModal(false);
+        setReleasedTo("");
+      }
     } finally {
       setSavingRelease(false);
     }
@@ -229,16 +257,6 @@ const TicketDetail = () => {
     }
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -251,8 +269,13 @@ const TicketDetail = () => {
     return null;
   }
 
-  const currentStatus = statuses.find((s) => s.value === ticket.status);
-  const StatusIcon = currentStatus?.icon || Clock;
+  const currentMeta = getStatusMeta(ticket.status);
+  const currentStyle = STATUS_STYLE_MAP[currentMeta.tone] || {
+    icon: Clock,
+    color: "text-gray-600",
+    bg: "bg-gray-100",
+  };
+  const StatusIcon = currentStyle.icon;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn">
@@ -260,24 +283,29 @@ const TicketDetail = () => {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button
+            type="button"
             onClick={() => navigate("/admin/tickets")}
+            aria-label="Back to tickets"
             className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
           >
             <ArrowLeft size={20} />
           </button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-gray-900">
+              <h1 className="text-2xl font-bold text-gray-900 tabular-nums">
                 {ticket.ticket_code}
               </h1>
               <span className="text-gray-400">•</span>
-              <span className="text-gray-500">#{ticket.sequential_id}</span>
+              <span className="text-gray-500 tabular-nums">
+                #{ticket.sequential_id}
+              </span>
             </div>
             <p className="text-gray-500 mt-1">{ticket.subject}</p>
           </div>
         </div>
         {isSuperAdmin && (
           <button
+            type="button"
             onClick={deleteTicket}
             className="btn-ghost text-red-600 hover:bg-red-50"
           >
@@ -294,26 +322,28 @@ const TicketDetail = () => {
           <div className="card p-6">
             <h2 className="font-semibold text-gray-900 mb-4">Update Status</h2>
             <div className="grid grid-cols-2 gap-3">
-              {statuses.map((status) => {
-                const Icon = status.icon;
+              {TICKET_STATUSES.map((status) => {
+                const style = STATUS_STYLE_MAP[status.tone];
+                const Icon = style.icon;
                 const isActive = ticket.status === status.value;
                 return (
                   <button
                     key={status.value}
+                    type="button"
                     onClick={() => handleStatusClick(status.value)}
                     disabled={updating || isActive}
                     className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${
                       isActive
-                        ? `border-current ${status.bg} ${status.color}`
+                        ? `border-current ${style.bg} ${style.color}`
                         : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
                     }`}
                   >
                     <Icon
                       size={20}
-                      className={isActive ? status.color : "text-gray-400"}
+                      className={isActive ? style.color : "text-gray-400"}
                     />
                     <span
-                      className={`text-sm font-medium ${isActive ? status.color : "text-gray-600"}`}
+                      className={`text-sm font-medium ${isActive ? style.color : "text-gray-600"}`}
                     >
                       {status.label}
                     </span>
@@ -391,8 +421,8 @@ const TicketDetail = () => {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Date Received</p>
-                  <p className="font-medium text-gray-900">
-                    {formatDate(ticket.received_at)}
+                  <p className="font-medium text-gray-900 tabular-nums">
+                    {formatDateTime(ticket.received_at)}
                   </p>
                 </div>
               </div>
@@ -410,8 +440,8 @@ const TicketDetail = () => {
                         {ticket.released_to}
                       </p>
                       {ticket.released_at && (
-                        <p className="text-sm text-gray-500 mt-1">
-                          {formatDate(ticket.released_at)}
+                        <p className="text-sm text-gray-500 mt-1 tabular-nums">
+                          {formatDateTime(ticket.released_at)}
                         </p>
                       )}
                     </div>
@@ -439,11 +469,11 @@ const TicketDetail = () => {
           <div className="card p-6">
             <h2 className="font-semibold text-gray-900 mb-4">Current Status</h2>
             <div
-              className={`flex items-center gap-3 p-4 rounded-xl ${currentStatus?.bg}`}
+              className={`flex items-center gap-3 p-4 rounded-xl ${currentStyle.bg}`}
             >
-              <StatusIcon size={24} className={currentStatus?.color} />
-              <span className={`font-semibold ${currentStatus?.color}`}>
-                {currentStatus?.label}
+              <StatusIcon size={24} className={currentStyle.color} />
+              <span className={`font-semibold ${currentStyle.color}`}>
+                {currentMeta.label}
               </span>
             </div>
           </div>
@@ -462,14 +492,9 @@ const TicketDetail = () => {
                     className="relative pl-4 border-l-2 border-gray-100"
                   >
                     <p className="text-sm text-gray-900">{log.action}</p>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-gray-500 mt-1 tabular-nums">
                       {log.profiles?.full_name || "System"} •{" "}
-                      {new Date(log.created_at).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {formatShortDateTime(log.created_at)}
                     </p>
                   </div>
                 ))}
@@ -487,7 +512,9 @@ const TicketDetail = () => {
                 {ticket.profiles?.full_name || "Unknown"}
               </span>
             </p>
-            <p className="mt-1">{formatDate(ticket.created_at)}</p>
+            <p className="mt-1 tabular-nums">
+              {formatDateTime(ticket.created_at)}
+            </p>
           </div>
         </div>
       </div>
@@ -497,7 +524,7 @@ const TicketDetail = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-black/50"
-            onClick={() => setShowReleaseModal(false)}
+            onClick={() => !savingRelease && setShowReleaseModal(false)}
           />
           <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md animate-slideUp">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
@@ -505,7 +532,10 @@ const TicketDetail = () => {
                 Release Document
               </h2>
               <button
+                type="button"
+                disabled={savingRelease}
                 onClick={() => setShowReleaseModal(false)}
+                aria-label="Close modal"
                 className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
               >
                 <X size={20} />
@@ -533,6 +563,7 @@ const TicketDetail = () => {
               <div className="pt-2 flex gap-3">
                 <button
                   type="button"
+                  disabled={savingRelease}
                   onClick={() => setShowReleaseModal(false)}
                   className="btn-secondary flex-1"
                 >
@@ -543,7 +574,7 @@ const TicketDetail = () => {
                   disabled={savingRelease || !releasedTo.trim()}
                   className="btn-primary flex-1"
                 >
-                  {savingRelease ? "Saving..." : "Confirm Release"}
+                  {savingRelease ? "Saving…" : "Confirm Release"}
                 </button>
               </div>
             </form>
