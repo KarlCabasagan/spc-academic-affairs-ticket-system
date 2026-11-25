@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import { FileSpreadsheet, Download } from "lucide-react";
-import * as XLSX from "xlsx";
 import toast from "react-hot-toast";
 
 const Reports = () => {
@@ -97,6 +96,9 @@ const Reports = () => {
         }
         ticketsByMonth[monthKey].tickets.push(ticket);
       });
+
+      // Lazy-load SheetJS only when exporting
+      const XLSX = await import("xlsx");
 
       // Create workbook
       const workbook = XLSX.utils.book_new();
