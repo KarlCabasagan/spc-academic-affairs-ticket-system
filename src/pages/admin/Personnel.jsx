@@ -1,5 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import {
+  validateAvatarFile,
+  uploadAvatarFile,
+  removeAvatarByUrl,
+} from "../../lib/storageUtils";
 import { Plus, Pencil, Trash2, Users, X, Upload, User } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -13,6 +18,20 @@ const Personnel = () => {
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const fileInputRef = useRef(null);
+  const blobUrlRef = useRef(null);
+
+  const revokeBlobPreview = () => {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      revokeBlobPreview();
+    };
+  }, []);
 
   const fetchPersonnel = async () => {
     try {
@@ -36,6 +55,7 @@ const Personnel = () => {
   }, []);
 
   const openModal = (person = null) => {
+    revokeBlobPreview();
     setEditingPersonnel(person);
     setFormData({
       name: person?.name || "",
@@ -47,6 +67,7 @@ const Personnel = () => {
   };
 
   const closeModal = () => {
+    revokeBlobPreview();
     setModalOpen(false);
     setEditingPersonnel(null);
     setFormData({ name: "", avatar_url: "" });
@@ -55,87 +76,82 @@ const Personnel = () => {
   };
 
   const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        toast.error("Image must be less than 2MB");
-        return;
-      }
-      setAvatarFile(file);
-      setAvatarPreview(URL.createObjectURL(file));
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validation = validateAvatarFile(file);
+    if (!validation.valid) {
+      toast.error(validation.error);
+      e.target.value = "";
+      return;
     }
-  };
 
-  const uploadAvatar = async (file) => {
-    const fileExt = file.name.split(".").pop();
-    const fileName = `personnel-${Date.now()}.${fileExt}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("avatars")
-      .upload(fileName, file);
-
-    if (uploadError) throw uploadError;
-
-    const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
-    return data.publicUrl;
-  };
-
-  // Extract filename from avatar URL
-  const extractFileName = (url) => {
-    if (!url) return null;
-    try {
-      const urlObj = new URL(url);
-      const pathParts = urlObj.pathname.split("/");
-      return pathParts[pathParts.length - 1];
-    } catch {
-      return null;
-    }
+    revokeBlobPreview();
+    const objectUrl = URL.createObjectURL(file);
+    blobUrlRef.current = objectUrl;
+    setAvatarFile(file);
+    setAvatarPreview(objectUrl);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name.trim()) return;
+    const trimmedName = formData.name.trim();
+    if (!trimmedName) {
+      toast.error("Please enter a full name");
+      return;
+    }
 
     setSubmitting(true);
-    try {
-      let avatarUrl = formData.avatar_url;
+    let newlyUploadedUrl = null;
+    const previousAvatarUrl = editingPersonnel?.avatar_url || null;
 
-      // Upload new avatar if selected
+    try {
+      let avatarUrl = formData.avatar_url || null;
+
+      // Upload new avatar first so existing file stays intact if upload or DB fails
       if (avatarFile) {
-        // Delete old avatar if exists (when editing)
-        if (editingPersonnel?.avatar_url) {
-          const oldFileName = extractFileName(editingPersonnel.avatar_url);
-          if (oldFileName) {
-            await supabase.storage.from("avatars").remove([oldFileName]);
-          }
-        }
-        avatarUrl = await uploadAvatar(avatarFile);
+        const uploaded = await uploadAvatarFile(
+          supabase,
+          avatarFile,
+          "personnel",
+        );
+        newlyUploadedUrl = uploaded.publicUrl;
+        avatarUrl = uploaded.publicUrl;
       }
 
-      const data = {
-        name: formData.name.trim(),
+      const payload = {
+        name: trimmedName,
         avatar_url: avatarUrl,
       };
 
       if (editingPersonnel) {
         const { error } = await supabase
           .from("personnel")
-          .update(data)
+          .update(payload)
           .eq("id", editingPersonnel.id);
 
         if (error) throw error;
         toast.success("Personnel updated successfully");
       } else {
-        const { error } = await supabase.from("personnel").insert(data);
+        const { error } = await supabase.from("personnel").insert(payload);
 
         if (error) throw error;
         toast.success("Personnel created successfully");
+      }
+
+      // Best-effort removal of old avatar after DB save succeeds
+      if (newlyUploadedUrl && previousAvatarUrl) {
+        await removeAvatarByUrl(supabase, previousAvatarUrl);
       }
 
       closeModal();
       fetchPersonnel();
     } catch (error) {
       console.error("Error saving personnel:", error);
+      // Roll back newly uploaded object if DB write failed
+      if (newlyUploadedUrl) {
+        await removeAvatarByUrl(supabase, newlyUploadedUrl);
+      }
       toast.error(error.message || "Failed to save personnel");
     } finally {
       setSubmitting(false);
@@ -152,6 +168,11 @@ const Personnel = () => {
         .eq("id", person.id);
 
       if (error) throw error;
+
+      if (person.avatar_url) {
+        await removeAvatarByUrl(supabase, person.avatar_url);
+      }
+
       toast.success("Personnel deleted successfully");
       fetchPersonnel();
     } catch (error) {
@@ -178,7 +199,7 @@ const Personnel = () => {
             Manage staff who receive documents.
           </p>
         </div>
-        <button onClick={() => openModal()} className="btn-primary">
+        <button type="button" onClick={() => openModal()} className="btn-primary">
           <Plus size={18} />
           <span>Add Personnel</span>
         </button>
@@ -203,13 +224,17 @@ const Personnel = () => {
                 </div>
                 <div className="flex gap-1">
                   <button
+                    type="button"
                     onClick={() => openModal(person)}
+                    aria-label={`Edit ${person.name}`}
                     className="p-2 text-gray-500 hover:text-maroon-700 hover:bg-maroon-50 rounded-lg transition-colors"
                   >
                     <Pencil size={16} />
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleDelete(person)}
+                    aria-label={`Delete ${person.name}`}
                     className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                   >
                     <Trash2 size={16} />
@@ -226,6 +251,7 @@ const Personnel = () => {
           <Users size={40} className="text-gray-300 mx-auto mb-3" />
           <p className="text-gray-500">No personnel yet</p>
           <button
+            type="button"
             onClick={() => openModal()}
             className="text-maroon-700 hover:text-maroon-800 text-sm font-medium mt-2"
           >
@@ -244,7 +270,9 @@ const Personnel = () => {
                 {editingPersonnel ? "Edit Personnel" : "Add Personnel"}
               </h2>
               <button
+                type="button"
                 onClick={closeModal}
+                aria-label="Close modal"
                 className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
               >
                 <X size={20} />
@@ -278,13 +306,13 @@ const Personnel = () => {
                       Upload Photo
                     </button>
                     <p className="text-xs text-gray-400 mt-1">
-                      Max 2MB, JPG or PNG
+                      Max 2MB, JPG, PNG, or WebP
                     </p>
                   </div>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/webp"
                     onChange={handleFileChange}
                     className="hidden"
                   />
@@ -323,7 +351,7 @@ const Personnel = () => {
                   className="btn-primary flex-1"
                 >
                   {submitting
-                    ? "Saving..."
+                    ? "Saving…"
                     : editingPersonnel
                       ? "Update"
                       : "Create"}

@@ -1,11 +1,22 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { supabase } from "../../lib/supabaseClient";
+import {
+  validateAvatarFile,
+  uploadAvatarFile,
+  removeAvatarByUrl,
+} from "../../lib/storageUtils";
 import { User, Upload, Save, Lock } from "lucide-react";
 import toast from "react-hot-toast";
 
+const formatRoleLabel = (role) => {
+  if (role === "super_admin") return "Super Admin";
+  if (role === "admin") return "Admin";
+  return role ? role.replace("_", " ") : "";
+};
+
 const Profile = () => {
-  const { user, profile, updateProfile } = useAuth();
+  const { user, profile, updateProfile, updatePassword } = useAuth();
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [avatarPreview, setAvatarPreview] = useState(
     profile?.avatar_url || null,
@@ -20,74 +31,91 @@ const Profile = () => {
   const [changingPassword, setChangingPassword] = useState(false);
 
   const fileInputRef = useRef(null);
+  const blobUrlRef = useRef(null);
+
+  const revokeBlobPreview = () => {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      revokeBlobPreview();
+    };
+  }, []);
+
+  // Sync local form fields when profile hydrates or updates externally
+  useEffect(() => {
+    if (!profile) return;
+    setFullName(profile.full_name || "");
+    if (!avatarFile) {
+      setAvatarPreview(profile.avatar_url || null);
+    }
+  }, [profile, avatarFile]);
 
   const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        toast.error("Image must be less than 2MB");
-        return;
-      }
-      setAvatarFile(file);
-      setAvatarPreview(URL.createObjectURL(file));
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validation = validateAvatarFile(file);
+    if (!validation.valid) {
+      toast.error(validation.error);
+      e.target.value = "";
+      return;
     }
-  };
 
-  const uploadAvatar = async (file) => {
-    const fileExt = file.name.split(".").pop();
-    const fileName = `user-${user.id}-${Date.now()}.${fileExt}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("avatars")
-      .upload(fileName, file, { upsert: true });
-
-    if (uploadError) throw uploadError;
-
-    const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
-    return data.publicUrl;
-  };
-
-  // Extract filename from avatar URL
-  const extractFileName = (url) => {
-    if (!url) return null;
-    try {
-      const urlObj = new URL(url);
-      const pathParts = urlObj.pathname.split("/");
-      return pathParts[pathParts.length - 1];
-    } catch {
-      return null;
-    }
+    revokeBlobPreview();
+    const objectUrl = URL.createObjectURL(file);
+    blobUrlRef.current = objectUrl;
+    setAvatarFile(file);
+    setAvatarPreview(objectUrl);
   };
 
   const handleSaveProfile = async (e) => {
     e.preventDefault();
-    if (!fullName.trim()) return;
+    const trimmedName = fullName.trim();
+    if (!trimmedName) {
+      toast.error("Please enter your full name");
+      return;
+    }
 
     setSaving(true);
+    let newlyUploadedUrl = null;
+    const previousAvatarUrl = profile?.avatar_url || null;
+
     try {
-      let avatarUrl = profile?.avatar_url;
+      let avatarUrl = profile?.avatar_url || null;
 
       if (avatarFile) {
-        // Delete old avatar if exists
-        if (profile?.avatar_url) {
-          const oldFileName = extractFileName(profile.avatar_url);
-          if (oldFileName) {
-            await supabase.storage.from("avatars").remove([oldFileName]);
-          }
-        }
-        avatarUrl = await uploadAvatar(avatarFile);
+        const uploaded = await uploadAvatarFile(
+          supabase,
+          avatarFile,
+          `user-${user.id}`,
+        );
+        newlyUploadedUrl = uploaded.publicUrl;
+        avatarUrl = uploaded.publicUrl;
       }
 
       await updateProfile({
-        full_name: fullName.trim(),
+        full_name: trimmedName,
         avatar_url: avatarUrl,
       });
 
-      toast.success("Profile updated successfully");
+      if (newlyUploadedUrl && previousAvatarUrl) {
+        await removeAvatarByUrl(supabase, previousAvatarUrl);
+      }
+
+      revokeBlobPreview();
       setAvatarFile(null);
+      toast.success("Profile updated successfully");
     } catch (error) {
       console.error("Error updating profile:", error);
-      toast.error("Failed to update profile");
+      if (newlyUploadedUrl) {
+        await removeAvatarByUrl(supabase, newlyUploadedUrl);
+      }
+      toast.error(error.message || "Failed to update profile");
     } finally {
       setSaving(false);
     }
@@ -108,12 +136,7 @@ const Profile = () => {
 
     setChangingPassword(true);
     try {
-      const { error } = await supabase.auth.updateUser({
-        password: passwordData.newPassword,
-      });
-
-      if (error) throw error;
-
+      await updatePassword(passwordData.newPassword);
       toast.success("Password changed successfully");
       setPasswordData({ newPassword: "", confirmPassword: "" });
     } catch (error) {
@@ -157,12 +180,14 @@ const Profile = () => {
                 <Upload size={18} />
                 <span>Upload Photo</span>
               </button>
-              <p className="text-sm text-gray-400 mt-2">Max 2MB, JPG or PNG</p>
+              <p className="text-sm text-gray-400 mt-2">
+                Max 2MB, JPG, PNG, or WebP
+              </p>
             </div>
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp"
               onChange={handleFileChange}
               className="hidden"
             />
@@ -186,8 +211,11 @@ const Profile = () => {
 
           {/* Email (Read Only) */}
           <div>
-            <label className="label">Email Address</label>
+            <label htmlFor="profileEmail" className="label">
+              Email Address
+            </label>
             <input
+              id="profileEmail"
               type="email"
               value={user?.email || ""}
               className="input bg-gray-50"
@@ -200,18 +228,21 @@ const Profile = () => {
 
           {/* Role (Read Only) */}
           <div>
-            <label className="label">Role</label>
+            <label htmlFor="profileRole" className="label">
+              Role
+            </label>
             <input
+              id="profileRole"
               type="text"
-              value={profile?.role?.replace("_", " ").toUpperCase() || ""}
-              className="input bg-gray-50 capitalize"
+              value={formatRoleLabel(profile?.role)}
+              className="input bg-gray-50"
               disabled
             />
           </div>
 
           <button type="submit" disabled={saving} className="btn-primary">
             {saving ? (
-              "Saving..."
+              "Saving…"
             ) : (
               <>
                 <Save size={18} />
@@ -274,7 +305,7 @@ const Profile = () => {
             className="btn-primary"
           >
             {changingPassword ? (
-              "Changing..."
+              "Changing…"
             ) : (
               <>
                 <Lock size={18} />
