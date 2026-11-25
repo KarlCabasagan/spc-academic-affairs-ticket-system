@@ -1,8 +1,19 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { supabase } from "../../lib/supabaseClient";
-import { TICKET_STATUSES, getStatusMeta } from "../../lib/ticketStatus";
-import { Search, Filter, Ticket, PlusCircle, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { TICKET_STATUSES } from "../../lib/ticketStatus";
+import { formatShortDateTime } from "../../lib/dateUtils";
+import StatusBadge from "../../components/ui/StatusBadge";
+import { TableSkeleton } from "../../components/ui/Skeleton";
+import EmptyState from "../../components/ui/EmptyState";
+import {
+  Search,
+  Ticket,
+  PlusCircle,
+  X,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import toast from "react-hot-toast";
 
 const PAGE_SIZE = 20;
@@ -10,6 +21,13 @@ const PAGE_SIZE = 20;
 const Tickets = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [tickets, setTickets] = useState([]);
+  const [statusCounts, setStatusCounts] = useState({
+    all: 0,
+    Pending: 0,
+    "Approved and Recommended": 0,
+    "Approved and released": 0,
+    "Disapproved and revised": 0,
+  });
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -20,11 +38,7 @@ const Tickets = () => {
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [sortBy, setSortBy] = useState("newest");
   const [page, setPage] = useState(1);
-  const [showFilters, setShowFilters] = useState(() =>
-    Boolean(searchParams.get("status")),
-  );
 
-  // Sync statusFilter when URL query parameter changes externally (e.g. from Dashboard links)
   useEffect(() => {
     const paramStatus = searchParams.get("status") || "";
     setStatusFilter(paramStatus);
@@ -64,10 +78,28 @@ const Tickets = () => {
         query = query.eq("department_id", departmentFilter);
       }
 
-      const { data, error } = await query;
+      const countQuery = supabase.from("tickets").select("status");
 
-      if (error) throw error;
-      setTickets(data || []);
+      const [ticketsRes, countsRes] = await Promise.all([query, countQuery]);
+
+      if (ticketsRes.error) throw ticketsRes.error;
+      setTickets(ticketsRes.data || []);
+
+      if (!countsRes.error && countsRes.data) {
+        const nextCounts = {
+          all: countsRes.data.length,
+          Pending: 0,
+          "Approved and Recommended": 0,
+          "Approved and released": 0,
+          "Disapproved and revised": 0,
+        };
+        countsRes.data.forEach((row) => {
+          if (Object.hasOwn(nextCounts, row.status)) {
+            nextCounts[row.status] += 1;
+          }
+        });
+        setStatusCounts(nextCounts);
+      }
     } catch (error) {
       console.error("Error fetching tickets:", error);
       toast.error("Failed to load tickets");
@@ -94,7 +126,6 @@ const Tickets = () => {
     fetchTickets();
   }, [fetchTickets]);
 
-  // Real-time subscription using current fetchTickets callback
   useEffect(() => {
     const channel = supabase
       .channel("tickets-list")
@@ -154,22 +185,6 @@ const Tickets = () => {
     return filteredTickets.slice(start, start + PAGE_SIZE);
   }, [filteredTickets, currentPage]);
 
-  const getStatusBadge = (status) => {
-    const meta = getStatusMeta(status);
-    switch (meta.tone) {
-      case "pending":
-        return <span className="badge-pending">{meta.shortLabel}</span>;
-      case "approved":
-        return <span className="badge-approved">{meta.shortLabel}</span>;
-      case "disapproved":
-        return <span className="badge-disapproved">{meta.shortLabel}</span>;
-      case "recommended":
-        return <span className="badge-recommended">{meta.shortLabel}</span>;
-      default:
-        return <span className="badge">{meta.shortLabel}</span>;
-    }
-  };
-
   const clearFilters = () => {
     handleStatusChange("");
     setDepartmentFilter("");
@@ -182,55 +197,113 @@ const Tickets = () => {
     statusFilter || departmentFilter || searchQuery.trim(),
   );
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-10 h-10 border-4 border-maroon-700 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  const statusTabs = [
+    { value: "", label: "All", count: statusCounts.all },
+    ...TICKET_STATUSES.map((s) => ({
+      value: s.value,
+      label: s.shortLabel,
+      count: statusCounts[s.value] || 0,
+    })),
+  ];
 
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="max-w-6xl mx-auto space-y-5 animate-fadeIn">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">All Tickets</h1>
-          <p className="text-gray-500 mt-1 tabular-nums">
-            {filteredTickets.length} ticket
+          <h1 className="text-2xl font-bold text-ink tracking-tight">
+            Ticket Registry
+          </h1>
+          <p className="text-sm text-ink-muted mt-1 tabular-nums">
+            {filteredTickets.length} docket
             {filteredTickets.length !== 1 ? "s" : ""}{" "}
-            {hasActiveFilters ? "matching filters" : "total"}
+            {hasActiveFilters ? "matching current filters" : "recorded"}
           </p>
         </div>
-        <Link to="/admin/tickets/create" className="btn-primary">
-          <PlusCircle size={18} />
+        <Link
+          to="/admin/tickets/create"
+          className="btn-primary self-start sm:self-auto"
+        >
+          <PlusCircle size={16} />
           <span>Create Ticket</span>
         </Link>
       </div>
 
-      {/* Search and Filters */}
-      <div className="card p-4">
-        <div className="flex flex-col sm:flex-row gap-4">
-          {/* Search */}
+      {/* Status Tabs */}
+      <div
+        role="tablist"
+        aria-label="Filter tickets by status"
+        className="flex flex-wrap gap-1.5 border-b border-border pb-3"
+      >
+        {statusTabs.map((tab) => {
+          const active = statusFilter === tab.value;
+          return (
+            <button
+              key={tab.value || "all"}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => handleStatusChange(tab.value)}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 min-h-[38px] rounded-md text-xs font-semibold cursor-pointer ${
+                active
+                  ? "bg-maroon-700 text-white"
+                  : "bg-surface border border-border text-ink-muted hover:text-ink hover:bg-rail/60"
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[11px] font-mono tabular-nums ${
+                  active
+                    ? "bg-white/20 text-white"
+                    : "bg-rail text-ink-muted"
+                }`}
+              >
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Toolbar */}
+      <div className="card p-3.5">
+        <div className="flex flex-col md:flex-row gap-3">
           <div className="relative flex-1">
             <Search
-              size={18}
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+              size={16}
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-subtle pointer-events-none"
             />
             <input
               type="text"
+              aria-label="Search tickets"
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
                 setPage(1);
               }}
-              placeholder="Search by code, #id, subject, name, or department…"
+              placeholder="Search code, #id, subject, name, department…"
               className="input"
-              style={{ paddingLeft: "3rem" }}
+              style={{ paddingLeft: "2.5rem" }}
             />
           </div>
 
-          {/* Sort */}
+          <select
+            aria-label="Filter by department"
+            value={departmentFilter}
+            onChange={(e) => {
+              setDepartmentFilter(e.target.value);
+              setPage(1);
+            }}
+            className="select md:w-52"
+          >
+            <option value="">All Departments</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+
           <select
             aria-label="Sort tickets"
             value={sortBy}
@@ -238,177 +311,189 @@ const Tickets = () => {
               setSortBy(e.target.value);
               setPage(1);
             }}
-            className="select sm:w-44"
+            className="select md:w-40"
           >
             <option value="newest">Newest First</option>
             <option value="oldest">Oldest First</option>
             <option value="code">Code (A–Z)</option>
           </select>
 
-          {/* Filter Toggle */}
-          <button
-            type="button"
-            onClick={() => setShowFilters(!showFilters)}
-            className={`btn-secondary ${showFilters ? "bg-gray-100" : ""}`}
-          >
-            <Filter size={18} />
-            <span>Filters</span>
-            {hasActiveFilters && (
-              <span className="w-2 h-2 bg-maroon-600 rounded-full" />
-            )}
-          </button>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="btn-ghost text-[#991b1b] shrink-0"
+            >
+              <X size={15} />
+              <span>Reset</span>
+            </button>
+          )}
         </div>
-
-        {/* Filter Options */}
-        {showFilters && (
-          <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap gap-4">
-            <div className="flex-1 min-w-[200px]">
-              <label htmlFor="ticket-status-filter" className="label">
-                Status
-              </label>
-              <select
-                id="ticket-status-filter"
-                value={statusFilter}
-                onChange={(e) => handleStatusChange(e.target.value)}
-                className="select"
-              >
-                <option value="">All Statuses</option>
-                {TICKET_STATUSES.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex-1 min-w-[200px]">
-              <label htmlFor="ticket-dept-filter" className="label">
-                Department
-              </label>
-              <select
-                id="ticket-dept-filter"
-                value={departmentFilter}
-                onChange={(e) => {
-                  setDepartmentFilter(e.target.value);
-                  setPage(1);
-                }}
-                className="select"
-              >
-                <option value="">All Departments</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="btn-ghost text-red-600 self-end"
-              >
-                <X size={16} />
-                <span>Clear</span>
-              </button>
-            )}
-          </div>
-        )}
       </div>
 
-      {/* Tickets List */}
-      <div className="card">
-        {paginatedTickets.length > 0 ? (
-          <>
-            <div className="divide-y divide-gray-100">
-              {paginatedTickets.map((ticket) => (
-                <Link
-                  key={ticket.id}
-                  to={`/admin/tickets/${ticket.id}`}
-                  className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center gap-4 min-w-0">
-                    <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center shrink-0">
-                      <Ticket size={20} className="text-gray-500" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-semibold text-maroon-700 tabular-nums">
-                          {ticket.ticket_code}
-                        </span>
-                        <span className="text-gray-400">•</span>
-                        <span className="text-sm text-gray-500 tabular-nums">
-                          #{ticket.sequential_id}
-                        </span>
-                      </div>
-                      <p className="text-gray-900 truncate">{ticket.subject}</p>
-                      <p className="text-sm text-gray-500 truncate">
-                        {ticket.affected_party}
-                        {ticket.departments && ` • ${ticket.departments.name}`}
+      {/* Registry Table / List */}
+      {loading ? (
+        <TableSkeleton rows={6} />
+      ) : paginatedTickets.length > 0 ? (
+        <div className="card overflow-hidden">
+          {/* Desktop Table */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-border bg-rail/60">
+                  <th className="eyebrow px-4 py-3">Docket Code</th>
+                  <th className="eyebrow px-4 py-3">Subject &amp; Party</th>
+                  <th className="eyebrow px-4 py-3">Department</th>
+                  <th className="eyebrow px-4 py-3">Received By</th>
+                  <th className="eyebrow px-4 py-3">Received</th>
+                  <th className="eyebrow px-4 py-3 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border text-sm">
+                {paginatedTickets.map((ticket) => (
+                  <tr
+                    key={ticket.id}
+                    className="hover:bg-canvas transition-colors"
+                  >
+                    <td className="px-4 py-3.5 align-top whitespace-nowrap">
+                      <Link
+                        to={`/admin/tickets/${ticket.id}`}
+                        className="font-mono font-semibold text-maroon-700 hover:underline tabular-nums"
+                      >
+                        {ticket.ticket_code}
+                      </Link>
+                      <p className="font-mono text-xs text-ink-muted tabular-nums mt-0.5">
+                        #{ticket.sequential_id}
                       </p>
-                    </div>
-                  </div>
-                  <div className="shrink-0 ml-4">
-                    {getStatusBadge(ticket.status)}
-                  </div>
-                </Link>
-              ))}
-            </div>
-
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-sm text-gray-600">
-                <span className="tabular-nums">
-                  Showing {(currentPage - 1) * PAGE_SIZE + 1}–
-                  {Math.min(currentPage * PAGE_SIZE, filteredTickets.length)} of{" "}
-                  {filteredTickets.length}
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={currentPage <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    className="btn-secondary px-3 py-1.5"
-                    aria-label="Previous page"
-                  >
-                    <ChevronLeft size={16} />
-                    <span>Prev</span>
-                  </button>
-                  <span className="px-2 tabular-nums">
-                    {currentPage} / {totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={currentPage >= totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    className="btn-secondary px-3 py-1.5"
-                    aria-label="Next page"
-                  >
-                    <span>Next</span>
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="p-8 text-center">
-            <Ticket size={40} className="text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500">
-              {hasActiveFilters
-                ? "No tickets match your filters"
-                : "No tickets yet"}
-            </p>
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="text-maroon-700 hover:text-maroon-800 text-sm font-medium mt-2"
-              >
-                Clear filters
-              </button>
-            )}
+                    </td>
+                    <td className="px-4 py-3.5 align-top max-w-xs">
+                      <Link
+                        to={`/admin/tickets/${ticket.id}`}
+                        className="font-medium text-ink hover:text-maroon-700 block truncate"
+                      >
+                        {ticket.subject}
+                      </Link>
+                      <p className="text-xs text-ink-muted truncate mt-0.5">
+                        {ticket.affected_party}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3.5 align-top text-ink-muted">
+                      {ticket.departments?.name || "—"}
+                    </td>
+                    <td className="px-4 py-3.5 align-top text-ink-muted">
+                      {ticket.personnel?.name || "—"}
+                    </td>
+                    <td className="px-4 py-3.5 align-top text-xs text-ink-muted whitespace-nowrap tabular-nums">
+                      {formatShortDateTime(ticket.received_at)}
+                    </td>
+                    <td className="px-4 py-3.5 align-top text-right whitespace-nowrap">
+                      <StatusBadge status={ticket.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
-      </div>
+
+          {/* Mobile Stacked Rows */}
+          <div className="md:hidden divide-y divide-border">
+            {paginatedTickets.map((ticket) => (
+              <Link
+                key={ticket.id}
+                to={`/admin/tickets/${ticket.id}`}
+                className="block p-4 hover:bg-canvas transition-colors space-y-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm font-semibold text-maroon-700 tabular-nums">
+                      {ticket.ticket_code}
+                    </span>
+                    <span className="font-mono text-xs text-ink-muted tabular-nums">
+                      #{ticket.sequential_id}
+                    </span>
+                  </div>
+                  <StatusBadge status={ticket.status} />
+                </div>
+                <p className="text-sm font-medium text-ink">{ticket.subject}</p>
+                <p className="text-xs text-ink-muted tabular-nums">
+                  {ticket.affected_party}
+                  {ticket.departments?.name && ` · ${ticket.departments.name}`}
+                  {ticket.received_at &&
+                    ` · ${formatShortDateTime(ticket.received_at)}`}
+                </p>
+              </Link>
+            ))}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-rail/30 text-xs text-ink-muted">
+              <span className="tabular-nums">
+                Showing {(currentPage - 1) * PAGE_SIZE + 1}–
+                {Math.min(currentPage * PAGE_SIZE, filteredTickets.length)} of{" "}
+                {filteredTickets.length}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={currentPage <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="btn-secondary min-h-[36px] px-2.5 py-1 text-xs"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft size={14} />
+                  <span>Prev</span>
+                </button>
+                <span className="px-1.5 font-mono tabular-nums text-ink">
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="btn-secondary min-h-[36px] px-2.5 py-1 text-xs"
+                  aria-label="Next page"
+                >
+                  <span>Next</span>
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="card">
+          <EmptyState
+            icon={Ticket}
+            title={
+              hasActiveFilters
+                ? "No tickets match your filters"
+                : "No tickets recorded yet"
+            }
+            description={
+              hasActiveFilters
+                ? "Try clearing your search query or changing the selected status tab."
+                : "Create your first OVPAA ticket to start tracking document flow."
+            }
+            action={
+              hasActiveFilters ? (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="btn-secondary"
+                >
+                  Clear Filters
+                </button>
+              ) : (
+                <Link to="/admin/tickets/create" className="btn-primary">
+                  <PlusCircle size={16} />
+                  <span>Create Ticket</span>
+                </Link>
+              )
+            }
+          />
+        </div>
+      )}
     </div>
   );
 };
