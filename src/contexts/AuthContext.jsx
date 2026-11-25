@@ -3,18 +3,29 @@ import { supabase } from "../lib/supabaseClient";
 
 export const AuthContext = createContext(null);
 
+const DISABLED_ACCOUNT_MESSAGE =
+  "Your account has been deactivated or archived. Please contact a Super Admin.";
+
+export const isAccountDisabled = (profileData) =>
+  Boolean(profileData && (profileData.is_archived || profileData.is_active === false));
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(true);
   const [isRecoverySession, setIsRecoverySession] = useState(false);
+  const [authNotice, setAuthNotice] = useState(null);
+
+  const clearAuthNotice = useCallback(() => {
+    setAuthNotice(null);
+  }, []);
 
   const fetchProfile = useCallback(async (userId) => {
     if (!userId) {
       setProfile(null);
       setProfileLoading(false);
-      return null;
+      return { profile: null, disabled: false };
     }
 
     setProfileLoading(true);
@@ -26,12 +37,22 @@ export const AuthProvider = ({ children }) => {
         .single();
 
       if (error) throw error;
+
+      if (isAccountDisabled(data)) {
+        await supabase.auth.signOut();
+        setUser(null);
+        setProfile(null);
+        setIsRecoverySession(false);
+        setAuthNotice(DISABLED_ACCOUNT_MESSAGE);
+        return { profile: null, disabled: true };
+      }
+
       setProfile(data);
-      return data;
+      return { profile: data, disabled: false };
     } catch (error) {
       console.error("Error fetching profile:", error);
       setProfile(null);
-      return null;
+      return { profile: null, disabled: false };
     } finally {
       setProfileLoading(false);
     }
@@ -105,6 +126,7 @@ export const AuthProvider = ({ children }) => {
   }, [fetchProfile]);
 
   const signIn = async (email, password) => {
+    setAuthNotice(null);
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -112,14 +134,19 @@ export const AuthProvider = ({ children }) => {
 
     if (error) throw error;
 
-    const fetchedProfile = data?.user
+    const result = data?.user
       ? await fetchProfile(data.user.id)
-      : null;
+      : { profile: null, disabled: false };
 
-    return { ...data, profile: fetchedProfile };
+    if (result.disabled) {
+      throw new Error(DISABLED_ACCOUNT_MESSAGE);
+    }
+
+    return { ...data, profile: result.profile };
   };
 
   const signUp = async (email, password, fullName) => {
+    setAuthNotice(null);
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -181,6 +208,8 @@ export const AuthProvider = ({ children }) => {
     loading,
     profileLoading,
     isRecoverySession,
+    authNotice,
+    clearAuthNotice,
     signIn,
     signUp,
     signOut,
@@ -188,7 +217,11 @@ export const AuthProvider = ({ children }) => {
     resetPassword,
     updatePassword,
     isSuperAdmin,
-    refreshProfile: () => (user ? fetchProfile(user.id) : Promise.resolve(null)),
+    refreshProfile: async () => {
+      if (!user) return null;
+      const result = await fetchProfile(user.id);
+      return result.profile;
+    },
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

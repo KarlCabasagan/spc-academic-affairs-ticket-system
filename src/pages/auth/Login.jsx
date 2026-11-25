@@ -19,14 +19,21 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const { signIn, signUp, resetPassword } = useAuth();
+  const { signIn, signUp, resetPassword, authNotice, clearAuthNotice } =
+    useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const from = location.state?.from?.pathname || "/admin/dashboard";
+  const disabledNotice =
+    authNotice ||
+    (location.state?.disabledAccount
+      ? "Your account has been deactivated or archived. Please contact a Super Admin."
+      : null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    clearAuthNotice();
     setLoading(true);
 
     try {
@@ -97,6 +104,16 @@ const Login = () => {
             <h1 className="text-2xl font-bold text-gray-900">{getTitle()}</h1>
             <p className="text-gray-500 mt-2">{getSubtitle()}</p>
           </div>
+
+          {/* Disabled Account Notice */}
+          {disabledNotice && (
+            <div
+              role="alert"
+              className="mb-5 p-3.5 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700"
+            >
+              {disabledNotice}
+            </div>
+          )}
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">

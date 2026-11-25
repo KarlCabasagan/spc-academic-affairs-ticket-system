@@ -20,6 +20,16 @@ const ProtectedRoute = ({ children, requireSuperAdmin = false }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  if (profile && (profile.is_archived || profile.is_active === false)) {
+    return (
+      <Navigate
+        to="/login"
+        state={{ from: location, disabledAccount: true }}
+        replace
+      />
+    );
+  }
+
   if (requireSuperAdmin && profile?.role !== "super_admin") {
     return <Navigate to="/admin/dashboard" replace />;
   }
