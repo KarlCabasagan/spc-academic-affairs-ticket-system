@@ -1,16 +1,59 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Clock, CheckCircle } from "lucide-react";
+import { Search, Clock, CheckCircle, X } from "lucide-react";
+import { normalizeTicketCode } from "../../lib/ticketStatus";
+
+const RECENT_TICKETS_KEY = "spc_recent_tickets";
+
+const readRecentTickets = () => {
+  try {
+    const raw = localStorage.getItem(RECENT_TICKETS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.slice(0, 4) : [];
+  } catch {
+    return [];
+  }
+};
 
 const LandingPage = () => {
-  const [ticketCode, setTicketCode] = useState("SPC-");
+  const [codeSuffix, setCodeSuffix] = useState("");
+  const [validationError, setValidationError] = useState("");
+  const [recentTickets, setRecentTickets] = useState(() => readRecentTickets());
   const navigate = useNavigate();
+
+  const handleCodeChange = (e) => {
+    const raw = e.target.value;
+    setValidationError("");
+
+    const cleaned = raw
+      .toUpperCase()
+      .replace(/^(SPC-?)+/i, "")
+      .replace(/[^A-Z0-9]/g, "");
+    setCodeSuffix(cleaned);
+  };
 
   const handleSearch = (e) => {
     e.preventDefault();
-    if (ticketCode.trim()) {
-      navigate(`/track/${ticketCode.trim().toUpperCase()}`);
+    const { fullCode, isValid } = normalizeTicketCode(codeSuffix);
+
+    if (!isValid) {
+      setValidationError(
+        "Please enter at least 3 characters after SPC- (for example, 8X92).",
+      );
+      return;
     }
+
+    setValidationError("");
+    navigate(`/track/${fullCode}`);
+  };
+
+  const clearRecent = () => {
+    try {
+      localStorage.removeItem(RECENT_TICKETS_KEY);
+    } catch {
+      // Ignore storage errors
+    }
+    setRecentTickets([]);
   };
 
   return (
@@ -37,18 +80,32 @@ const LandingPage = () => {
           </p>
 
           {/* Search Box */}
-          <form onSubmit={handleSearch} className="relative max-w-xl mx-auto">
-            <div className="relative">
+          <form
+            onSubmit={handleSearch}
+            className="relative max-w-xl mx-auto"
+            noValidate
+          >
+            <div className="relative flex items-center">
               <Search
-                size={22}
-                className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400"
+                size={20}
+                className="absolute left-4 text-gray-400 pointer-events-none"
               />
+              <span
+                aria-hidden="true"
+                className="absolute left-11 font-mono font-semibold text-maroon-700 select-none"
+              >
+                SPC-
+              </span>
               <input
                 type="text"
-                value={ticketCode}
-                onChange={(e) => setTicketCode(e.target.value.toUpperCase())}
-                placeholder="Enter ticket code (e.g., SPC-8X92)"
-                className="w-full pl-14 pr-36 py-4 text-lg rounded-2xl border border-gray-200 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent transition-all"
+                aria-label="Ticket code suffix"
+                value={codeSuffix}
+                onChange={handleCodeChange}
+                placeholder="8X92"
+                maxLength={12}
+                className={`w-full pl-22 pr-32 py-4 text-lg font-mono uppercase rounded-2xl border bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent transition-all ${
+                  validationError ? "border-red-400" : "border-gray-200"
+                }`}
               />
               <button
                 type="submit"
@@ -57,12 +114,45 @@ const LandingPage = () => {
                 Track
               </button>
             </div>
+            {validationError && (
+              <p
+                role="alert"
+                className="text-sm text-red-600 mt-2 text-left pl-2"
+              >
+                {validationError}
+              </p>
+            )}
           </form>
 
           {/* Example */}
           <p className="text-sm text-gray-400 mt-4">
-            Example: SPC-8X92, SPC-AB12
+            Example: SPC-8X92, SPC-AB12 (paste full code or 4-character suffix)
           </p>
+
+          {/* Recent Lookups */}
+          {recentTickets.length > 0 && (
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+              <span className="text-xs text-gray-500 font-medium">Recent:</span>
+              {recentTickets.map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => navigate(`/track/${code}`)}
+                  className="px-3 py-1 rounded-full bg-gray-100 hover:bg-maroon-50 hover:text-maroon-700 text-xs font-mono font-medium text-gray-700 transition-colors"
+                >
+                  {code}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={clearRecent}
+                aria-label="Clear recent tickets"
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-full"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
         </div>
       </section>
 

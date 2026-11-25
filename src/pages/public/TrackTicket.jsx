@@ -1,6 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "../../lib/supabaseClient";
+import { getStatusMeta, normalizeTicketCode } from "../../lib/ticketStatus";
+import { formatDateTime } from "../../lib/dateUtils";
 import {
   ArrowLeft,
   FileText,
@@ -16,6 +18,49 @@ import {
   MapPin,
 } from "lucide-react";
 
+const RECENT_TICKETS_KEY = "spc_recent_tickets";
+
+const saveRecentTicket = (code) => {
+  if (!code) return;
+  try {
+    const raw = localStorage.getItem(RECENT_TICKETS_KEY);
+    const existing = raw ? JSON.parse(raw) : [];
+    const list = Array.isArray(existing) ? existing : [];
+    const updated = [code, ...list.filter((c) => c !== code)].slice(0, 4);
+    localStorage.setItem(RECENT_TICKETS_KEY, JSON.stringify(updated));
+  } catch {
+    // Ignore storage errors
+  }
+};
+
+const TONE_CLASSES = {
+  pending: {
+    icon: Clock,
+    color: "text-yellow-700",
+    bg: "bg-yellow-100",
+  },
+  approved: {
+    icon: CheckCircle,
+    color: "text-green-700",
+    bg: "bg-green-100",
+  },
+  disapproved: {
+    icon: XCircle,
+    color: "text-red-700",
+    bg: "bg-red-100",
+  },
+  recommended: {
+    icon: ThumbsUp,
+    color: "text-blue-700",
+    bg: "bg-blue-100",
+  },
+  neutral: {
+    icon: Clock,
+    color: "text-gray-600",
+    bg: "bg-gray-100",
+  },
+};
+
 const TrackTicket = () => {
   const { ticketCode } = useParams();
   const [ticket, setTicket] = useState(null);
@@ -23,74 +68,93 @@ const TrackTicket = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const fetchTicket = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+  const normalized = normalizeTicketCode(ticketCode);
+  const lookupCode = normalized.fullCode || (ticketCode || "").trim().toUpperCase();
 
-        const { data, error: fetchError } = await supabase
-          .from("tickets")
-          .select(
-            `
-            id,
-            ticket_code,
-            subject,
-            status,
-            remarks,
-            received_at,
-            personnel_id,
-            department_id,
-            released_to,
-            released_at,
-            departments (name)
-          `,
-          )
-          .eq("ticket_code", ticketCode.toUpperCase())
-          .single();
-
-        if (fetchError) {
-          if (fetchError.code === "PGRST116") {
-            setError(
-              "Ticket not found. Please check your ticket code and try again.",
-            );
-          } else {
-            throw fetchError;
-          }
-          return;
-        }
-
-        setTicket(data);
-
-        // Fetch personnel if exists
-        if (data.personnel_id) {
-          const { data: personnelData } = await supabase
-            .from("personnel")
-            .select("name, avatar_url")
-            .eq("id", data.personnel_id)
-            .single();
-          setPersonnel(personnelData);
-        }
-      } catch (err) {
-        console.error("Error fetching ticket:", err);
-        setError(
-          "An error occurred while fetching the ticket. Please try again.",
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (ticketCode) {
-      fetchTicket();
+  const fetchTicket = useCallback(async ({ showSpinner = true } = {}) => {
+    if (!lookupCode || !normalized.isValid) {
+      setTicket(null);
+      setPersonnel(null);
+      setError(
+        "Invalid ticket code format. Please enter a complete code such as SPC-8X92.",
+      );
+      setLoading(false);
+      return;
     }
-  }, [ticketCode]);
 
-  // Real-time subscription for ticket updates
+    try {
+      if (showSpinner) {
+        setLoading(true);
+      }
+      setError(null);
+      setPersonnel(null);
+
+      const { data, error: fetchError } = await supabase
+        .from("tickets")
+        .select(
+          `
+          id,
+          ticket_code,
+          sequential_id,
+          subject,
+          status,
+          remarks,
+          received_at,
+          updated_at,
+          personnel_id,
+          department_id,
+          released_to,
+          released_at,
+          departments (name)
+        `,
+        )
+        .eq("ticket_code", lookupCode)
+        .single();
+
+      if (fetchError) {
+        setTicket(null);
+        if (fetchError.code === "PGRST116") {
+          setError(
+            "Ticket not found. Please check your ticket code and try again.",
+          );
+        } else {
+          throw fetchError;
+        }
+        return;
+      }
+
+      setTicket(data);
+      saveRecentTicket(data.ticket_code);
+
+      if (data.personnel_id) {
+        const { data: personnelData } = await supabase
+          .from("personnel")
+          .select("name, avatar_url")
+          .eq("id", data.personnel_id)
+          .single();
+        setPersonnel(personnelData || null);
+      } else {
+        setPersonnel(null);
+      }
+    } catch (err) {
+      console.error("Error fetching ticket:", err);
+      setError(
+        "An error occurred while fetching the ticket. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [lookupCode, normalized.isValid]);
+
+  useEffect(() => {
+    fetchTicket({ showSpinner: true });
+  }, [fetchTicket]);
+
+  // Real-time subscription re-fetches full ticket + relations on updates
   useEffect(() => {
     if (!ticket?.id) return;
 
-    const subscription = supabase
+    const channel = supabase
       .channel(`public-ticket-${ticket.id}`)
       .on(
         "postgres_changes",
@@ -100,79 +164,29 @@ const TrackTicket = () => {
           table: "tickets",
           filter: `id=eq.${ticket.id}`,
         },
-        (payload) => {
-          setTicket((prev) => ({ ...prev, ...payload.new }));
+        () => {
+          fetchTicket({ showSpinner: false });
         },
       )
       .subscribe();
 
     return () => {
-      subscription.unsubscribe();
+      supabase.removeChannel(channel);
     };
-  }, [ticket?.id]);
-
-  const getStatusConfig = (status) => {
-    switch (status) {
-      case "Pending":
-        return {
-          icon: Clock,
-          color: "text-yellow-600",
-          bg: "bg-yellow-100",
-          label: "Pending",
-        };
-      case "Approved and released":
-        return {
-          icon: CheckCircle,
-          color: "text-green-600",
-          bg: "bg-green-100",
-          label: "Approved & Released",
-        };
-      case "Disapproved and revised":
-        return {
-          icon: XCircle,
-          color: "text-red-600",
-          bg: "bg-red-100",
-          label: "Disapproved & Revised",
-        };
-      case "Approved and Recommended":
-        return {
-          icon: ThumbsUp,
-          color: "text-blue-600",
-          bg: "bg-blue-100",
-          label: "Approved & Recommended",
-        };
-      default:
-        return {
-          icon: Clock,
-          color: "text-gray-600",
-          bg: "bg-gray-100",
-          label: status,
-        };
-    }
-  };
-
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  }, [ticket?.id, fetchTicket]);
 
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center py-20">
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 border-4 border-maroon-700 border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-500">Looking up your ticket...</p>
+          <p className="text-gray-500">Looking up your ticket…</p>
         </div>
       </div>
     );
   }
 
-  if (error) {
+  if (error || !ticket) {
     return (
       <div className="flex-1 flex items-center justify-center px-4 py-20">
         <div className="max-w-md w-full text-center">
@@ -192,8 +206,9 @@ const TrackTicket = () => {
     );
   }
 
-  const statusConfig = getStatusConfig(ticket.status);
-  const StatusIcon = statusConfig.icon;
+  const statusMeta = getStatusMeta(ticket.status);
+  const statusStyle = TONE_CLASSES[statusMeta.tone] || TONE_CLASSES.neutral;
+  const StatusIcon = statusStyle.icon;
 
   return (
     <div className="flex-1 px-4 py-8 sm:py-12">
@@ -210,19 +225,26 @@ const TrackTicket = () => {
         {/* Ticket Card */}
         <div className="card p-6 sm:p-8 animate-slideUp">
           {/* Header */}
-          <div className="flex items-start justify-between mb-6">
+          <div className="flex items-start justify-between gap-4 mb-6">
             <div>
               <p className="text-sm text-gray-500 mb-1">Ticket Code</p>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-                {ticket.ticket_code}
-              </h1>
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">
+                  {ticket.ticket_code}
+                </h1>
+                {ticket.sequential_id && (
+                  <span className="text-sm font-mono text-gray-500 tabular-nums">
+                    #{ticket.sequential_id}
+                  </span>
+                )}
+              </div>
             </div>
             <div
-              className={`flex items-center gap-2 px-4 py-2 rounded-full ${statusConfig.bg}`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full ${statusStyle.bg}`}
             >
-              <StatusIcon size={18} className={statusConfig.color} />
-              <span className={`font-medium text-sm ${statusConfig.color}`}>
-                {statusConfig.label}
+              <StatusIcon size={18} className={statusStyle.color} />
+              <span className={`font-medium text-sm ${statusStyle.color}`}>
+                {statusMeta.label}
               </span>
             </div>
           </div>
@@ -283,13 +305,13 @@ const TrackTicket = () => {
               </div>
               <div>
                 <p className="text-sm text-gray-500">Date Received</p>
-                <p className="font-medium text-gray-900">
-                  {formatDate(ticket.received_at)}
+                <p className="font-medium text-gray-900 tabular-nums">
+                  {formatDateTime(ticket.received_at)}
                 </p>
               </div>
             </div>
 
-            {/* Release Info - Only show if released */}
+            {/* Release Info */}
             {ticket.status === "Approved and released" &&
               ticket.released_to && (
                 <div className="flex items-start gap-4 p-4 bg-green-50 rounded-xl border border-green-100">
@@ -302,8 +324,8 @@ const TrackTicket = () => {
                       {ticket.released_to}
                     </p>
                     {ticket.released_at && (
-                      <p className="text-sm text-green-600 mt-1">
-                        {formatDate(ticket.released_at)}
+                      <p className="text-sm text-green-600 mt-1 tabular-nums">
+                        {formatDateTime(ticket.released_at)}
                       </p>
                     )}
                   </div>
@@ -316,7 +338,7 @@ const TrackTicket = () => {
                 <p className="text-sm text-maroon-700 font-medium mb-1">
                   Remarks
                 </p>
-                <p className="text-maroon-900">{ticket.remarks}</p>
+                <p className="text-maroon-900 max-w-[65ch]">{ticket.remarks}</p>
               </div>
             )}
           </div>
