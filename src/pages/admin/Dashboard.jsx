@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../hooks/useAuth";
+import { getStatusMeta } from "../../lib/ticketStatus";
+import { formatShortDateTime } from "../../lib/dateUtils";
 import {
   Ticket,
   PlusCircle,
@@ -11,6 +13,8 @@ import {
   ThumbsUp,
   ArrowRight,
   TrendingUp,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 
 const StatCard = ({ icon, label, value, color, bgColor }) => {
@@ -20,7 +24,9 @@ const StatCard = ({ icon, label, value, color, bgColor }) => {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-gray-500 mb-1">{label}</p>
-          <p className="text-3xl font-bold text-gray-900">{value}</p>
+          <p className="text-3xl font-bold text-gray-900 tabular-nums">
+            {value}
+          </p>
         </div>
         <div
           className={`w-12 h-12 ${bgColor} rounded-xl flex items-center justify-center`}
@@ -43,53 +49,65 @@ const Dashboard = () => {
   });
   const [recentTickets, setRecentTickets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     try {
-      // Fetch all tickets for stats
-      const { data: tickets, error } = await supabase
+      setError(null);
+      const { data: tickets, error: fetchError } = await supabase
         .from("tickets")
-        .select("id, ticket_code, subject, status, created_at")
+        .select(
+          `
+          id,
+          ticket_code,
+          subject,
+          affected_party,
+          status,
+          received_at,
+          created_at,
+          departments (name)
+        `,
+        )
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
+      if (fetchError) throw fetchError;
 
-      // Calculate stats
-      const pending = tickets.filter((t) => t.status === "Pending").length;
-      const approved = tickets.filter(
+      const list = tickets || [];
+      const pending = list.filter((t) => t.status === "Pending").length;
+      const approved = list.filter(
         (t) => t.status === "Approved and released",
       ).length;
-      const disapproved = tickets.filter(
+      const disapproved = list.filter(
         (t) => t.status === "Disapproved and revised",
       ).length;
-      const recommended = tickets.filter(
+      const recommended = list.filter(
         (t) => t.status === "Approved and Recommended",
       ).length;
 
       setStats({
-        total: tickets.length,
+        total: list.length,
         pending,
         approved,
         disapproved,
         recommended,
       });
 
-      // Set recent tickets (last 5)
-      setRecentTickets(tickets.slice(0, 5));
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error);
+      setRecentTickets(list.slice(0, 5));
+    } catch (err) {
+      console.error("Error fetching dashboard data:", err);
+      setError("Failed to load dashboard overview. Please try again.");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, [fetchDashboardData]);
 
   // Real-time subscription for ticket changes
   useEffect(() => {
-    const subscription = supabase
+    const channel = supabase
       .channel("dashboard-tickets")
       .on(
         "postgres_changes",
@@ -98,27 +116,30 @@ const Dashboard = () => {
           schema: "public",
           table: "tickets",
         },
-        () => fetchDashboardData(),
+        () => {
+          fetchDashboardData();
+        },
       )
       .subscribe();
 
     return () => {
-      subscription.unsubscribe();
+      supabase.removeChannel(channel);
     };
-  }, []);
+  }, [fetchDashboardData]);
 
   const getStatusBadge = (status) => {
-    switch (status) {
-      case "Pending":
-        return <span className="badge-pending">Pending</span>;
-      case "Approved and released":
-        return <span className="badge-approved">Released</span>;
-      case "Disapproved and revised":
-        return <span className="badge-disapproved">Disapproved</span>;
-      case "Approved and Recommended":
-        return <span className="badge-recommended">Recommended</span>;
+    const meta = getStatusMeta(status);
+    switch (meta.tone) {
+      case "pending":
+        return <span className="badge-pending">{meta.shortLabel}</span>;
+      case "approved":
+        return <span className="badge-approved">{meta.shortLabel}</span>;
+      case "disapproved":
+        return <span className="badge-disapproved">{meta.shortLabel}</span>;
+      case "recommended":
+        return <span className="badge-recommended">{meta.shortLabel}</span>;
       default:
-        return <span className="badge">{status}</span>;
+        return <span className="badge">{meta.shortLabel}</span>;
     }
   };
 
@@ -126,6 +147,29 @@ const Dashboard = () => {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="w-10 h-10 border-4 border-maroon-700 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="card p-8 text-center max-w-md mx-auto my-12">
+        <AlertCircle size={36} className="text-red-600 mx-auto mb-3" />
+        <h2 className="text-lg font-semibold text-gray-900 mb-1">
+          Unable to Load Dashboard
+        </h2>
+        <p className="text-sm text-gray-500 mb-5">{error}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setLoading(true);
+            fetchDashboardData();
+          }}
+          className="btn-primary"
+        >
+          <RefreshCw size={16} />
+          <span>Retry</span>
+        </button>
       </div>
     );
   }
@@ -209,22 +253,29 @@ const Dashboard = () => {
               <Link
                 key={ticket.id}
                 to={`/admin/tickets/${ticket.id}`}
-                className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+                className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors gap-4"
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
                     <Ticket size={18} className="text-gray-500" />
                   </div>
-                  <div>
-                    <p className="font-medium text-gray-900">
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-900 tabular-nums">
                       {ticket.ticket_code}
                     </p>
-                    <p className="text-sm text-gray-500 truncate max-w-xs">
+                    <p className="text-sm text-gray-700 truncate">
                       {ticket.subject}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate tabular-nums">
+                      {ticket.affected_party}
+                      {ticket.departments?.name &&
+                        ` • ${ticket.departments.name}`}
+                      {ticket.received_at &&
+                        ` • ${formatShortDateTime(ticket.received_at)}`}
                     </p>
                   </div>
                 </div>
-                {getStatusBadge(ticket.status)}
+                <div className="shrink-0">{getStatusBadge(ticket.status)}</div>
               </Link>
             ))}
           </div>

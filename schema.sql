@@ -436,3 +436,47 @@ CREATE POLICY "Authenticated users can delete avatars"
   TO authenticated
   USING (bucket_id = 'avatars');
 
+-- =====================================================
+-- RLS HARDENING MIGRATION (Prevent self-escalation)
+-- =====================================================
+
+CREATE OR REPLACE FUNCTION is_active_super_admin()
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM profiles
+    WHERE id = auth.uid()
+      AND role = 'super_admin'
+      AND COALESCE(is_archived, false) = false
+      AND COALESCE(is_active, true) = true
+  );
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = public;
+
+DROP POLICY IF EXISTS "Users can update their own profile" ON profiles;
+DROP POLICY IF EXISTS "Super admin can update any profile" ON profiles;
+
+CREATE POLICY "Users can update own non-privileged profile fields"
+  ON profiles FOR UPDATE
+  TO authenticated
+  USING (
+    auth.uid() = id
+    AND COALESCE(is_archived, false) = false
+    AND COALESCE(is_active, true) = true
+  )
+  WITH CHECK (
+    auth.uid() = id
+    AND role = (SELECT p.role FROM profiles p WHERE p.id = auth.uid())
+    AND COALESCE(is_active, true) = (
+      SELECT COALESCE(p.is_active, true) FROM profiles p WHERE p.id = auth.uid()
+    )
+    AND COALESCE(is_archived, false) = (
+      SELECT COALESCE(p.is_archived, false) FROM profiles p WHERE p.id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Super admin can update any profile"
+  ON profiles FOR UPDATE
+  TO authenticated
+  USING (is_active_super_admin())
+  WITH CHECK (is_active_super_admin());
+
+
