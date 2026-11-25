@@ -9,21 +9,19 @@ import {
   toLocalDateTimeInputValue,
   localDateTimeToISO,
 } from "../../lib/dateUtils";
+import StatusBadge from "../../components/ui/StatusBadge";
+import Modal from "../../components/ui/Modal";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import { DetailSkeleton } from "../../components/ui/Skeleton";
 import {
   ArrowLeft,
-  Tag,
-  Building2,
   User,
-  Calendar,
   Clock,
   CheckCircle,
   XCircle,
   ThumbsUp,
-  MessageSquare,
   Trash2,
   History,
-  X,
-  MapPin,
   Pencil,
   Save,
   Copy,
@@ -34,23 +32,23 @@ import toast from "react-hot-toast";
 const STATUS_STYLE_MAP = {
   pending: {
     icon: Clock,
-    color: "text-yellow-700",
-    bg: "bg-yellow-100",
+    activeClass: "border-[#d97706] bg-[#fef9ec] text-[#92400e]",
+    iconColor: "text-[#92400e]",
   },
   approved: {
     icon: CheckCircle,
-    color: "text-green-700",
-    bg: "bg-green-100",
+    activeClass: "border-[#166534] bg-[#eef7f1] text-[#166534]",
+    iconColor: "text-[#166534]",
   },
   disapproved: {
     icon: XCircle,
-    color: "text-red-700",
-    bg: "bg-red-100",
+    activeClass: "border-[#991b1b] bg-[#fdf1f1] text-[#991b1b]",
+    iconColor: "text-[#991b1b]",
   },
   recommended: {
     icon: ThumbsUp,
-    color: "text-blue-700",
-    bg: "bg-blue-100",
+    activeClass: "border-[#1e40af] bg-[#eff4fb] text-[#1e40af]",
+    iconColor: "text-[#1e40af]",
   },
 };
 
@@ -65,10 +63,14 @@ const TicketDetail = () => {
   const [updating, setUpdating] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // Release form state
+  // Release form modal state
   const [showReleaseModal, setShowReleaseModal] = useState(false);
   const [releasedTo, setReleasedTo] = useState("");
   const [savingRelease, setSavingRelease] = useState(false);
+
+  // Delete confirm modal state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Inline edit state
   const [isEditing, setIsEditing] = useState(false);
@@ -131,7 +133,6 @@ const TicketDetail = () => {
     fetchTicket();
   }, [fetchTicket]);
 
-  // Real-time subscription for ticket and logs changes
   useEffect(() => {
     if (!id) return;
 
@@ -170,9 +171,7 @@ const TicketDetail = () => {
 
   const filteredSubjects = useMemo(
     () =>
-      subjects.filter(
-        (item) => item.name?.trim().toLowerCase() !== "others",
-      ),
+      subjects.filter((item) => item.name?.trim().toLowerCase() !== "others"),
     [subjects],
   );
 
@@ -416,14 +415,9 @@ const TicketDetail = () => {
     }
   };
 
-  const deleteTicket = async () => {
-    if (
-      !confirm(
-        "Are you sure you want to delete this ticket? This action cannot be undone.",
-      )
-    )
-      return;
-
+  const handleConfirmDelete = async () => {
+    if (!ticket) return;
+    setDeleting(true);
     try {
       const { error } = await supabase
         .from("tickets")
@@ -433,69 +427,59 @@ const TicketDetail = () => {
       if (error) throw error;
 
       toast.success("Ticket deleted");
+      setShowDeleteConfirm(false);
       navigate("/admin/tickets");
     } catch (error) {
       console.error("Error deleting ticket:", error);
       toast.error("Failed to delete ticket");
+    } finally {
+      setDeleting(false);
     }
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-10 h-10 border-4 border-maroon-700 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+    return <DetailSkeleton />;
   }
 
   if (!ticket) {
     return null;
   }
 
-  const currentMeta = getStatusMeta(ticket.status);
-  const currentStyle = STATUS_STYLE_MAP[currentMeta.tone] || {
-    icon: Clock,
-    color: "text-gray-600",
-    bg: "bg-gray-100",
-  };
-  const StatusIcon = currentStyle.icon;
-
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn">
+    <div className="max-w-5xl mx-auto space-y-6 animate-fadeIn">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex items-start gap-3">
           <button
             type="button"
             onClick={() => navigate("/admin/tickets")}
             aria-label="Back to tickets"
-            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+            className="icon-btn -ml-2 shrink-0"
           >
             <ArrowLeft size={20} />
           </button>
           <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-gray-900 tabular-nums">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="font-mono text-2xl font-bold text-ink tracking-tight tabular-nums">
                 {ticket.ticket_code}
               </h1>
-              <span className="text-gray-400">•</span>
-              <span className="text-gray-500 tabular-nums">
+              <span className="font-mono text-sm text-ink-muted tabular-nums">
                 #{ticket.sequential_id}
               </span>
+              <StatusBadge status={ticket.status} variant="full" />
             </div>
-            <p className="text-gray-500 mt-1">{ticket.subject}</p>
+            <p className="text-sm text-ink-muted mt-1">{ticket.subject}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={copyTrackingLink}
             className="btn-secondary"
           >
-            {copiedLink ? <Check size={16} /> : <Copy size={16} />}
-            <span className="hidden sm:inline">
-              {copiedLink ? "Copied Link" : "Copy Tracking Link"}
-            </span>
+            {copiedLink ? <Check size={15} /> : <Copy size={15} />}
+            <span>{copiedLink ? "Copied Link" : "Copy Tracking Link"}</span>
           </button>
           {!isEditing && (
             <button
@@ -503,30 +487,38 @@ const TicketDetail = () => {
               onClick={startEditing}
               className="btn-secondary"
             >
-              <Pencil size={16} />
-              <span className="hidden sm:inline">Edit</span>
+              <Pencil size={15} />
+              <span>Edit</span>
             </button>
           )}
           {isSuperAdmin && (
             <button
               type="button"
-              onClick={deleteTicket}
-              className="btn-ghost text-red-600 hover:bg-red-50"
+              onClick={() => setShowDeleteConfirm(true)}
+              className="btn-ghost text-[#991b1b] hover:bg-[#fdf1f1]"
             >
-              <Trash2 size={18} />
-              <span className="hidden sm:inline">Delete</span>
+              <Trash2 size={16} />
+              <span>Delete</span>
             </button>
           )}
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6 items-start">
-        {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Status Update */}
-          <div className="card p-6">
-            <h2 className="font-semibold text-gray-900 mb-4">Update Status</h2>
-            <div className="grid grid-cols-2 gap-3">
+      {/* Main Workbench Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="lg:col-span-8 space-y-6">
+          {/* Routing Status Decision Panel */}
+          <section className="card p-5 space-y-3.5">
+            <div>
+              <h2 className="text-sm font-semibold text-ink">
+                Routing Status Decision
+              </h2>
+              <p className="text-xs text-ink-muted mt-0.5">
+                Select a status below to update the public tracker and record
+                an audit entry.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {TICKET_STATUSES.map((status) => {
                 const style = STATUS_STYLE_MAP[status.tone];
                 const Icon = style.icon;
@@ -537,37 +529,36 @@ const TicketDetail = () => {
                     type="button"
                     onClick={() => handleStatusClick(status.value)}
                     disabled={updating || isActive}
-                    className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${
+                    aria-pressed={isActive}
+                    className={`flex items-center gap-3 p-3.5 rounded-md border text-left transition-[transform,background-color,border-color,color] duration-150 cursor-pointer active:scale-[0.98] disabled:cursor-default ${
                       isActive
-                        ? `border-current ${style.bg} ${style.color}`
-                        : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
+                        ? `${style.activeClass} font-semibold`
+                        : "border-border bg-surface text-ink-muted hover:bg-rail/60 hover:text-ink"
                     }`}
                   >
                     <Icon
-                      size={20}
-                      className={isActive ? style.color : "text-gray-400"}
+                      size={18}
+                      className={
+                        isActive ? `${style.iconColor} shrink-0` : "text-ink-subtle shrink-0"
+                      }
                     />
-                    <span
-                      className={`text-sm font-medium ${isActive ? style.color : "text-gray-600"}`}
-                    >
-                      {status.label}
-                    </span>
+                    <span className="text-sm leading-tight">{status.label}</span>
                   </button>
                 );
               })}
             </div>
-          </div>
+          </section>
 
-          {/* Details / Inline Edit */}
-          <div className="card p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-gray-900">
-                {isEditing ? "Edit Ticket Details" : "Ticket Details"}
+          {/* Docket Details / Inline Edit */}
+          <section className="card overflow-hidden">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-ink">
+                {isEditing ? "Edit Docket Information" : "Docket Information"}
               </h2>
             </div>
 
             {isEditing ? (
-              <form onSubmit={handleSaveEdit} className="space-y-4">
+              <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
                 <div>
                   <label htmlFor="edit-subject" className="label">
                     Subject *
@@ -622,7 +613,7 @@ const TicketDetail = () => {
                       <button
                         type="button"
                         onClick={() => setIsOtherSubject(false)}
-                        className="text-sm text-maroon-700 hover:text-maroon-800"
+                        className="text-xs font-medium text-maroon-700 hover:text-maroon-800 cursor-pointer"
                       >
                         ← Back to dropdown
                       </button>
@@ -731,261 +722,227 @@ const TicketDetail = () => {
                         remarks: e.target.value,
                       }))
                     }
-                    className="input min-h-[90px] resize-y"
+                    className="input min-h-[96px] resize-y"
                     placeholder="Add remarks or routing instructions…"
                   />
                 </div>
 
-                <div className="flex gap-3 pt-2">
+                <div className="flex items-center justify-end gap-3 pt-2">
                   <button
                     type="button"
                     disabled={savingEdit}
                     onClick={() => setIsEditing(false)}
-                    className="btn-secondary flex-1"
+                    className="btn-secondary"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={savingEdit}
-                    className="btn-primary flex-1"
+                    className="btn-primary"
                   >
-                    <Save size={16} />
+                    <Save size={15} />
                     <span>{savingEdit ? "Saving…" : "Save Changes"}</span>
                   </button>
                 </div>
               </form>
             ) : (
-              <div className="space-y-4">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
-                    <Tag size={18} className="text-gray-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Subject</p>
-                    <p className="font-medium text-gray-900">
+              <div>
+                <dl className="grid sm:grid-cols-2 divide-y sm:divide-y-0">
+                  <div className="p-5 sm:border-r sm:border-b border-border">
+                    <dt className="eyebrow">Subject</dt>
+                    <dd className="text-sm font-semibold text-ink mt-1">
                       {ticket.subject}
-                    </p>
+                    </dd>
                   </div>
-                </div>
 
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
-                    <User size={18} className="text-gray-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Affected Party</p>
-                    <p className="font-medium text-gray-900">
+                  <div className="p-5 sm:border-b border-border">
+                    <dt className="eyebrow">Affected Party</dt>
+                    <dd className="text-sm font-medium text-ink mt-1">
                       {ticket.affected_party}
-                    </p>
+                    </dd>
                   </div>
-                </div>
 
-                {ticket.departments && (
-                  <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
-                      <Building2 size={18} className="text-gray-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500">Department</p>
-                      <p className="font-medium text-gray-900">
-                        {ticket.departments.name}
-                      </p>
-                    </div>
+                  <div className="p-5 sm:border-r sm:border-b border-border">
+                    <dt className="eyebrow">Origin Department</dt>
+                    <dd className="text-sm text-ink mt-1">
+                      {ticket.departments?.name || "Not specified"}
+                    </dd>
                   </div>
-                )}
 
-                {ticket.personnel && (
-                  <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
-                      {ticket.personnel.avatar_url ? (
-                        <img
-                          src={ticket.personnel.avatar_url}
-                          alt={ticket.personnel.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <User size={18} className="text-gray-500" />
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500">Received By</p>
-                      <p className="font-medium text-gray-900">
-                        {ticket.personnel.name}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
-                    <Calendar size={18} className="text-gray-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Date Received</p>
-                    <p className="font-medium text-gray-900 tabular-nums">
-                      {formatDateTime(ticket.received_at)}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Release Information */}
-                {ticket.status === "Approved and released" &&
-                  ticket.released_to && (
-                    <div className="flex items-start gap-4">
-                      <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center shrink-0">
-                        <MapPin size={18} className="text-green-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500">Released To</p>
-                        <p className="font-medium text-gray-900">
-                          {ticket.released_to}
-                        </p>
-                        {ticket.released_at && (
-                          <p className="text-sm text-gray-500 mt-1 tabular-nums">
-                            {formatDateTime(ticket.released_at)}
-                          </p>
+                  <div className="p-5 sm:border-b border-border">
+                    <dt className="eyebrow">Received By</dt>
+                    <dd className="mt-1 flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-rail border border-border flex items-center justify-center overflow-hidden shrink-0">
+                        {ticket.personnel?.avatar_url ? (
+                          <img
+                            src={ticket.personnel.avatar_url}
+                            alt={ticket.personnel.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <User size={12} className="text-ink-subtle" />
                         )}
                       </div>
-                    </div>
-                  )}
-
-                {ticket.remarks && (
-                  <div className="p-4 bg-gray-50 rounded-xl">
-                    <div className="flex items-center gap-2 mb-2">
-                      <MessageSquare size={16} className="text-gray-500" />
-                      <span className="text-sm font-medium text-gray-500">
-                        Remarks
+                      <span className="text-sm text-ink">
+                        {ticket.personnel?.name || "Unassigned"}
                       </span>
-                    </div>
-                    <p className="text-gray-900 max-w-[65ch]">
-                      {ticket.remarks}
-                    </p>
+                    </dd>
+                  </div>
+
+                  <div className="p-5 sm:border-r border-border">
+                    <dt className="eyebrow">Date &amp; Time Received</dt>
+                    <dd className="text-sm text-ink mt-1 tabular-nums">
+                      {formatDateTime(ticket.received_at)}
+                    </dd>
+                  </div>
+
+                  <div className="p-5">
+                    <dt className="eyebrow">Last Updated</dt>
+                    <dd className="text-sm text-ink mt-1 tabular-nums">
+                      {formatDateTime(ticket.updated_at || ticket.created_at)}
+                    </dd>
+                  </div>
+                </dl>
+
+                {((ticket.status === "Approved and released" &&
+                  ticket.released_to) ||
+                  ticket.remarks) && (
+                  <div className="p-5 border-t border-border space-y-3">
+                    {ticket.status === "Approved and released" &&
+                      ticket.released_to && (
+                        <div className="p-4 rounded-md bg-[#eef7f1] border border-[#bfe0ca]">
+                          <p className="eyebrow text-[#166534]">
+                            Release Record
+                          </p>
+                          <p className="text-sm font-semibold text-[#14532d] mt-1">
+                            Released to: {ticket.released_to}
+                          </p>
+                          {ticket.released_at && (
+                            <p className="text-xs text-[#166534] mt-1 tabular-nums">
+                              {formatDateTime(ticket.released_at)}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                    {ticket.remarks && (
+                      <div className="p-4 rounded-md bg-rail border border-border">
+                        <p className="eyebrow">Remarks</p>
+                        <p className="text-sm text-ink mt-1.5 leading-relaxed prose-measure">
+                          {ticket.remarks}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             )}
-          </div>
+          </section>
         </div>
 
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Current Status */}
-          <div className="card p-6">
-            <h2 className="font-semibold text-gray-900 mb-4">Current Status</h2>
-            <div
-              className={`flex items-center gap-3 p-4 rounded-xl ${currentStyle.bg}`}
-            >
-              <StatusIcon size={24} className={currentStyle.color} />
-              <span className={`font-semibold ${currentStyle.color}`}>
-                {currentMeta.label}
-              </span>
+        {/* Audit Trail Sidebar */}
+        <aside className="lg:col-span-4 space-y-5">
+          <div className="card p-5 space-y-4">
+            <div className="flex items-center gap-2 pb-3 border-b border-border">
+              <History size={16} className="text-ink-muted" />
+              <h2 className="text-sm font-semibold text-ink">Audit Trail</h2>
             </div>
-          </div>
 
-          {/* Activity Log */}
-          <div className="card p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <History size={18} className="text-gray-500" />
-              <h2 className="font-semibold text-gray-900">Activity Log</h2>
-            </div>
             {logs.length > 0 ? (
-              <div className="space-y-4 max-h-[300px] overflow-y-auto">
-                {logs.map((log) => (
-                  <div
-                    key={log.id}
-                    className="relative pl-4 border-l-2 border-gray-100"
-                  >
-                    <p className="text-sm text-gray-900">{log.action}</p>
-                    <p className="text-xs text-gray-500 mt-1 tabular-nums">
-                      {log.profiles?.full_name || "System"} •{" "}
+              <ol className="space-y-4 max-h-[360px] overflow-y-auto pr-1">
+                {logs.map((log, index) => (
+                  <li key={log.id} className="relative pl-5">
+                    <span
+                      aria-hidden="true"
+                      className="absolute left-0 top-1.5 w-2 h-2 rounded-full bg-maroon-700"
+                    />
+                    {index < logs.length - 1 && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute left-[3.5px] top-4 bottom-[-16px] w-px bg-border"
+                      />
+                    )}
+                    <p className="text-sm text-ink leading-snug">
+                      {log.action}
+                    </p>
+                    <p className="text-xs text-ink-muted mt-1 tabular-nums">
+                      {log.profiles?.full_name || "System"} ·{" "}
                       {formatShortDateTime(log.created_at)}
                     </p>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ol>
             ) : (
-              <p className="text-sm text-gray-500">No activity yet</p>
+              <p className="text-xs text-ink-muted">No activity recorded yet.</p>
             )}
           </div>
 
-          {/* Meta */}
-          <div className="card p-6 text-sm text-gray-500">
-            <p>
-              Created by{" "}
-              <span className="text-gray-700">
-                {ticket.profiles?.full_name || "Unknown"}
-              </span>
+          <div className="panel-recessed p-4 text-xs text-ink-muted space-y-1">
+            <p className="eyebrow">Created By</p>
+            <p className="text-sm font-medium text-ink">
+              {ticket.profiles?.full_name || "Unknown"}
             </p>
-            <p className="mt-1 tabular-nums">
-              {formatDateTime(ticket.created_at)}
-            </p>
+            <p className="tabular-nums">{formatDateTime(ticket.created_at)}</p>
           </div>
-        </div>
+        </aside>
       </div>
 
-      {/* Release Form Modal */}
-      {showReleaseModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => !savingRelease && setShowReleaseModal(false)}
-          />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md animate-slideUp">
-            <div className="flex items-center justify-between p-6 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Release Document
-              </h2>
-              <button
-                type="button"
-                disabled={savingRelease}
-                onClick={() => setShowReleaseModal(false)}
-                aria-label="Close modal"
-                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleReleaseSubmit} className="p-6 space-y-4">
-              <div>
-                <label htmlFor="releasedTo" className="label">
-                  Released To
-                </label>
-                <input
-                  id="releasedTo"
-                  type="text"
-                  value={releasedTo}
-                  onChange={(e) => setReleasedTo(e.target.value)}
-                  className="input"
-                  placeholder="Enter recipient/location"
-                  required
-                  autoFocus
-                />
-                <p className="text-sm text-gray-400 mt-2">
-                  Specify where or to whom the document is being released.
-                </p>
-              </div>
-              <div className="pt-2 flex gap-3">
-                <button
-                  type="button"
-                  disabled={savingRelease}
-                  onClick={() => setShowReleaseModal(false)}
-                  className="btn-secondary flex-1"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingRelease || !releasedTo.trim()}
-                  className="btn-primary flex-1"
-                >
-                  {savingRelease ? "Saving…" : "Confirm Release"}
-                </button>
-              </div>
-            </form>
+      {/* Release Modal */}
+      <Modal
+        open={showReleaseModal}
+        onClose={() => setShowReleaseModal(false)}
+        title="Release Document"
+        description="Record who received or where the finalized document was released."
+        closeDisabled={savingRelease}
+      >
+        <form onSubmit={handleReleaseSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="releasedTo" className="label">
+              Released To *
+            </label>
+            <input
+              id="releasedTo"
+              type="text"
+              value={releasedTo}
+              onChange={(e) => setReleasedTo(e.target.value)}
+              className="input"
+              placeholder="Recipient name or receiving office"
+              required
+              autoFocus
+            />
           </div>
-        </div>
-      )}
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="button"
+              disabled={savingRelease}
+              onClick={() => setShowReleaseModal(false)}
+              className="btn-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={savingRelease || !releasedTo.trim()}
+              className="btn-primary"
+            >
+              {savingRelease ? "Saving…" : "Confirm Release"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Delete Confirm Dialog */}
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleConfirmDelete}
+        title="Delete Ticket"
+        message={`Permanently delete ticket ${ticket.ticket_code}? Its audit trail logs will also be removed and cannot be recovered.`}
+        confirmLabel="Delete Ticket"
+        variant="danger"
+        loading={deleting}
+      />
     </div>
   );
 };
