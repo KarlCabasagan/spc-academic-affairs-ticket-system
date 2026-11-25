@@ -1,57 +1,178 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../lib/supabaseClient";
-import { FileSpreadsheet, Download } from "lucide-react";
+import {
+  toLocalDateInputValue,
+  localDateRangeToISO,
+  formatMonthKey,
+  formatMonthLabel,
+  formatExcelSheetName,
+  formatShortDate,
+} from "../../lib/dateUtils";
+import { FileSpreadsheet, Download, AlertCircle } from "lucide-react";
 import toast from "react-hot-toast";
 
+const buildMonthlySummary = (tickets) => {
+  const byMonth = {};
+
+  tickets.forEach((ticket) => {
+    const key = formatMonthKey(ticket.created_at);
+    const label = formatMonthLabel(ticket.created_at);
+    const sheetBase = formatExcelSheetName(ticket.created_at);
+
+    if (!byMonth[key]) {
+      byMonth[key] = {
+        key,
+        label,
+        sheetBase,
+        tickets: [],
+      };
+    }
+    byMonth[key].tickets.push(ticket);
+  });
+
+  const rows = Object.keys(byMonth)
+    .sort()
+    .map((key) => {
+      const group = byMonth[key];
+      const total = group.tickets.length;
+      const pending = group.tickets.filter((t) => t.status === "Pending").length;
+      const released = group.tickets.filter(
+        (t) => t.status === "Approved and released",
+      ).length;
+      const recommended = group.tickets.filter(
+        (t) => t.status === "Approved and Recommended",
+      ).length;
+      const disapproved = group.tickets.filter(
+        (t) => t.status === "Disapproved and revised",
+      ).length;
+
+      return {
+        key,
+        label: group.label,
+        sheetBase: group.sheetBase,
+        tickets: group.tickets,
+        total,
+        pending,
+        pendingPct: total > 0 ? `${((pending / total) * 100).toFixed(1)}%` : "0%",
+        released,
+        releasedPct:
+          total > 0 ? `${((released / total) * 100).toFixed(1)}%` : "0%",
+        recommended,
+        recommendedPct:
+          total > 0 ? `${((recommended / total) * 100).toFixed(1)}%` : "0%",
+        disapproved,
+        disapprovedPct:
+          total > 0 ? `${((disapproved / total) * 100).toFixed(1)}%` : "0%",
+      };
+    });
+
+  return rows;
+};
+
 const Reports = () => {
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [ticketCount, setTicketCount] = useState(null);
-
-  // Set default end date to current time on mount
-  useEffect(() => {
-    const now = new Date();
-    const formattedDate = now.toISOString().split("T")[0];
-    setEndDate(formattedDate);
-
-    // Default start date to 1 year ago
+  const [startDate, setStartDate] = useState(() => {
     const oneYearAgo = new Date();
     oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-    setStartDate(oneYearAgo.toISOString().split("T")[0]);
-  }, []);
+    return toLocalDateInputValue(oneYearAgo);
+  });
+  const [endDate, setEndDate] = useState(() => toLocalDateInputValue());
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [departments, setDepartments] = useState([]);
+  const [previewTickets, setPreviewTickets] = useState([]);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  // Fetch ticket count when dates change
+  const isDateRangeInvalid = Boolean(startDate && endDate && startDate > endDate);
+
   useEffect(() => {
-    const fetchCount = async () => {
-      if (!startDate || !endDate) {
-        setTicketCount(null);
-        return;
-      }
-
-      const { count, error } = await supabase
-        .from("tickets")
-        .select("*", { count: "exact", head: true })
-        .gte("created_at", `${startDate}T00:00:00`)
-        .lte("created_at", `${endDate}T23:59:59`);
-
+    const fetchDepartments = async () => {
+      const { data, error } = await supabase
+        .from("departments")
+        .select("*")
+        .order("name");
       if (!error) {
-        setTicketCount(count);
+        setDepartments(data || []);
       }
     };
 
-    fetchCount();
-  }, [startDate, endDate]);
+    fetchDepartments();
+  }, []);
 
-  const getMonthYear = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  };
+  useEffect(() => {
+    const fetchPreview = async () => {
+      if (!startDate || !endDate || isDateRangeInvalid) {
+        setPreviewTickets([]);
+        return;
+      }
 
-  const getMonthKey = (dateString) => {
-    const date = new Date(dateString);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-  };
+      setLoadingPreview(true);
+      try {
+        const { startISO, endISO } = localDateRangeToISO(startDate, endDate);
+        let query = supabase
+          .from("tickets")
+          .select(
+            `
+            *,
+            departments (name),
+            personnel (name)
+          `,
+          )
+          .gte("created_at", startISO)
+          .lte("created_at", endISO)
+          .order("created_at", { ascending: false });
+
+        if (departmentFilter) {
+          query = query.eq("department_id", departmentFilter);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        setPreviewTickets(data || []);
+      } catch (error) {
+        console.error("Error loading report preview:", error);
+        toast.error("Failed to load report preview");
+        setPreviewTickets([]);
+      } finally {
+        setLoadingPreview(false);
+      }
+    };
+
+    fetchPreview();
+  }, [startDate, endDate, departmentFilter, isDateRangeInvalid]);
+
+  const monthlySummary = useMemo(
+    () => buildMonthlySummary(previewTickets),
+    [previewTickets],
+  );
+
+  const totals = useMemo(() => {
+    const total = previewTickets.length;
+    const pending = previewTickets.filter((t) => t.status === "Pending").length;
+    const released = previewTickets.filter(
+      (t) => t.status === "Approved and released",
+    ).length;
+    const recommended = previewTickets.filter(
+      (t) => t.status === "Approved and Recommended",
+    ).length;
+    const disapproved = previewTickets.filter(
+      (t) => t.status === "Disapproved and revised",
+    ).length;
+
+    return {
+      total,
+      pending,
+      pendingPct: total > 0 ? `${((pending / total) * 100).toFixed(1)}%` : "0%",
+      released,
+      releasedPct:
+        total > 0 ? `${((released / total) * 100).toFixed(1)}%` : "0%",
+      recommended,
+      recommendedPct:
+        total > 0 ? `${((recommended / total) * 100).toFixed(1)}%` : "0%",
+      disapproved,
+      disapprovedPct:
+        total > 0 ? `${((disapproved / total) * 100).toFixed(1)}%` : "0%",
+    };
+  }, [previewTickets]);
 
   const exportToExcel = async () => {
     if (!startDate || !endDate) {
@@ -59,10 +180,15 @@ const Reports = () => {
       return;
     }
 
-    setLoading(true);
+    if (isDateRangeInvalid) {
+      toast.error("Start date must be on or before end date");
+      return;
+    }
+
+    setExporting(true);
     try {
-      // Fetch all tickets in date range
-      const { data: tickets, error } = await supabase
+      const { startISO, endISO } = localDateRangeToISO(startDate, endDate);
+      let query = supabase
         .from("tickets")
         .select(
           `
@@ -71,76 +197,42 @@ const Reports = () => {
           personnel (name)
         `,
         )
-        .gte("created_at", `${startDate}T00:00:00`)
-        .lte("created_at", `${endDate}T23:59:59`)
+        .gte("created_at", startISO)
+        .lte("created_at", endISO)
         .order("created_at", { ascending: false });
 
+      if (departmentFilter) {
+        query = query.eq("department_id", departmentFilter);
+      }
+
+      const { data: tickets, error } = await query;
       if (error) throw error;
 
       if (!tickets || tickets.length === 0) {
         toast.error("No tickets found in the selected date range");
-        setLoading(false);
         return;
       }
 
-      // Group tickets by month
-      const ticketsByMonth = {};
-      tickets.forEach((ticket) => {
-        const monthKey = getMonthKey(ticket.created_at);
-        const monthLabel = getMonthYear(ticket.created_at);
-        if (!ticketsByMonth[monthKey]) {
-          ticketsByMonth[monthKey] = {
-            label: monthLabel,
-            tickets: [],
-          };
-        }
-        ticketsByMonth[monthKey].tickets.push(ticket);
-      });
+      const rowsByMonth = buildMonthlySummary(tickets);
 
       // Lazy-load SheetJS only when exporting
       const XLSX = await import("xlsx");
 
-      // Create workbook
       const workbook = XLSX.utils.book_new();
 
-      // Create summary data
-      const summaryData = Object.keys(ticketsByMonth)
-        .sort()
-        .map((monthKey) => {
-          const monthData = ticketsByMonth[monthKey];
-          const total = monthData.tickets.length;
-          const pending = monthData.tickets.filter(
-            (t) => t.status === "Pending",
-          ).length;
-          const released = monthData.tickets.filter(
-            (t) => t.status === "Approved and released",
-          ).length;
-          const recommended = monthData.tickets.filter(
-            (t) => t.status === "Approved and Recommended",
-          ).length;
-          const disapproved = monthData.tickets.filter(
-            (t) => t.status === "Disapproved and revised",
-          ).length;
+      const summaryData = rowsByMonth.map((m) => ({
+        Month: m.label,
+        "Total Tickets": m.total,
+        Pending: m.pending,
+        "Pending %": m.pendingPct,
+        Released: m.released,
+        "Released %": m.releasedPct,
+        Recommended: m.recommended,
+        "Recommended %": m.recommendedPct,
+        Disapproved: m.disapproved,
+        "Disapproved %": m.disapprovedPct,
+      }));
 
-          return {
-            Month: monthData.label,
-            "Total Tickets": total,
-            Pending: pending,
-            "Pending %":
-              total > 0 ? `${((pending / total) * 100).toFixed(1)}%` : "0%",
-            Released: released,
-            "Released %":
-              total > 0 ? `${((released / total) * 100).toFixed(1)}%` : "0%",
-            Recommended: recommended,
-            "Recommended %":
-              total > 0 ? `${((recommended / total) * 100).toFixed(1)}%` : "0%",
-            Disapproved: disapproved,
-            "Disapproved %":
-              total > 0 ? `${((disapproved / total) * 100).toFixed(1)}%` : "0%",
-          };
-        });
-
-      // Add grand total row
       const grandTotal = tickets.length;
       const grandPending = tickets.filter((t) => t.status === "Pending").length;
       const grandReleased = tickets.filter(
@@ -157,28 +249,15 @@ const Reports = () => {
         Month: "TOTAL",
         "Total Tickets": grandTotal,
         Pending: grandPending,
-        "Pending %":
-          grandTotal > 0
-            ? `${((grandPending / grandTotal) * 100).toFixed(1)}%`
-            : "0%",
+        "Pending %": `${((grandPending / grandTotal) * 100).toFixed(1)}%`,
         Released: grandReleased,
-        "Released %":
-          grandTotal > 0
-            ? `${((grandReleased / grandTotal) * 100).toFixed(1)}%`
-            : "0%",
+        "Released %": `${((grandReleased / grandTotal) * 100).toFixed(1)}%`,
         Recommended: grandRecommended,
-        "Recommended %":
-          grandTotal > 0
-            ? `${((grandRecommended / grandTotal) * 100).toFixed(1)}%`
-            : "0%",
+        "Recommended %": `${((grandRecommended / grandTotal) * 100).toFixed(1)}%`,
         Disapproved: grandDisapproved,
-        "Disapproved %":
-          grandTotal > 0
-            ? `${((grandDisapproved / grandTotal) * 100).toFixed(1)}%`
-            : "0%",
+        "Disapproved %": `${((grandDisapproved / grandTotal) * 100).toFixed(1)}%`,
       });
 
-      // Add summary sheet
       const summarySheet = XLSX.utils.json_to_sheet(summaryData);
       summarySheet["!cols"] = [
         { wch: 18 },
@@ -194,50 +273,54 @@ const Reports = () => {
       ];
       XLSX.utils.book_append_sheet(workbook, summarySheet, "Summary");
 
-      // Create monthly sheets
-      Object.keys(ticketsByMonth)
-        .sort()
-        .forEach((monthKey) => {
-          const monthData = ticketsByMonth[monthKey];
-          const sheetData = monthData.tickets.map((ticket) => ({
-            "Ticket Code": ticket.ticket_code,
-            "#": ticket.sequential_id,
-            Subject: ticket.subject,
-            "Affected Party": ticket.affected_party,
-            Department: ticket.departments?.name || "-",
-            "Received By": ticket.personnel?.name || "-",
-            Status: ticket.status,
-            "Released To": ticket.released_to || "-",
-            "Released At": ticket.released_at
-              ? new Date(ticket.released_at).toLocaleDateString()
-              : "-",
-            Remarks: ticket.remarks || "-",
-            "Date Received": new Date(ticket.received_at).toLocaleDateString(),
-            "Created At": new Date(ticket.created_at).toLocaleDateString(),
-          }));
+      const usedSheetNames = new Set(["Summary"]);
 
-          const monthSheet = XLSX.utils.json_to_sheet(sheetData);
-          monthSheet["!cols"] = [
-            { wch: 12 },
-            { wch: 6 },
-            { wch: 25 },
-            { wch: 20 },
-            { wch: 18 },
-            { wch: 18 },
-            { wch: 22 },
-            { wch: 20 },
-            { wch: 14 },
-            { wch: 30 },
-            { wch: 14 },
-            { wch: 14 },
-          ];
+      rowsByMonth.forEach((monthGroup) => {
+        const sheetData = monthGroup.tickets.map((ticket) => ({
+          "Ticket Code": ticket.ticket_code,
+          "#": ticket.sequential_id,
+          Subject: ticket.subject,
+          "Affected Party": ticket.affected_party,
+          Department: ticket.departments?.name || "-",
+          "Received By": ticket.personnel?.name || "-",
+          Status: ticket.status,
+          "Released To": ticket.released_to || "-",
+          "Released At": ticket.released_at
+            ? formatShortDate(ticket.released_at)
+            : "-",
+          Remarks: ticket.remarks || "-",
+          "Date Received": formatShortDate(ticket.received_at),
+          "Created At": formatShortDate(ticket.created_at),
+        }));
 
-          // Use short month name for sheet title
-          const sheetName = monthData.label.substring(0, 12);
-          XLSX.utils.book_append_sheet(workbook, monthSheet, sheetName);
-        });
+        const monthSheet = XLSX.utils.json_to_sheet(sheetData);
+        monthSheet["!cols"] = [
+          { wch: 12 },
+          { wch: 6 },
+          { wch: 25 },
+          { wch: 20 },
+          { wch: 18 },
+          { wch: 18 },
+          { wch: 22 },
+          { wch: 20 },
+          { wch: 14 },
+          { wch: 30 },
+          { wch: 14 },
+          { wch: 14 },
+        ];
 
-      // Generate file
+        // Guarantee unique Excel-safe sheet name (<= 31 chars, e.g. "Sep 2026")
+        const baseName = monthGroup.sheetBase.slice(0, 31);
+        let sheetName = baseName;
+        let suffix = 2;
+        while (usedSheetNames.has(sheetName)) {
+          sheetName = `${baseName.slice(0, 27)} (${suffix})`;
+          suffix += 1;
+        }
+        usedSheetNames.add(sheetName);
+        XLSX.utils.book_append_sheet(workbook, monthSheet, sheetName);
+      });
+
       const fileName = `SPC_Tickets_${startDate}_to_${endDate}.xlsx`;
       XLSX.writeFile(workbook, fileName);
 
@@ -246,17 +329,17 @@ const Reports = () => {
       console.error("Error exporting:", error);
       toast.error("Failed to export tickets");
     } finally {
-      setLoading(false);
+      setExporting(false);
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8 animate-fadeIn">
+    <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
         <p className="text-gray-500 mt-1">
-          Export tickets to Excel with monthly summaries.
+          Preview monthly summaries and export tickets to Excel.
         </p>
       </div>
 
@@ -275,8 +358,8 @@ const Reports = () => {
         </div>
 
         <div className="space-y-4">
-          {/* Date Range */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Date Range + Department */}
+          <div className="grid sm:grid-cols-3 gap-4">
             <div>
               <label htmlFor="startDate" className="label">
                 Start Date
@@ -301,28 +384,70 @@ const Reports = () => {
                 className="input"
               />
             </div>
+            <div>
+              <label htmlFor="reportDepartment" className="label">
+                Department
+              </label>
+              <select
+                id="reportDepartment"
+                value={departmentFilter}
+                onChange={(e) => setDepartmentFilter(e.target.value)}
+                className="select"
+              >
+                <option value="">All Departments</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
+          {isDateRangeInvalid && (
+            <div
+              role="alert"
+              className="flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700"
+            >
+              <AlertCircle size={16} className="shrink-0" />
+              <span>Start date must be on or before end date.</span>
+            </div>
+          )}
+
           {/* Ticket Count Preview */}
-          {ticketCount !== null && (
-            <div className="p-4 bg-gray-50 rounded-xl">
-              <p className="text-sm text-gray-600">
-                <span className="font-semibold text-gray-900">
-                  {ticketCount}
-                </span>{" "}
-                ticket{ticketCount !== 1 ? "s" : ""} found in selected date
-                range
+          {!isDateRangeInvalid && (
+            <div className="p-4 bg-gray-50 rounded-xl flex items-center justify-between gap-4">
+              <p className="text-sm text-gray-600 tabular-nums">
+                {loadingPreview ? (
+                  "Loading ticket summary…"
+                ) : (
+                  <>
+                    <span className="font-semibold text-gray-900">
+                      {previewTickets.length}
+                    </span>{" "}
+                    ticket{previewTickets.length !== 1 ? "s" : ""} found in
+                    selected range
+                  </>
+                )}
               </p>
             </div>
           )}
 
           {/* Export Button */}
           <button
+            type="button"
             onClick={exportToExcel}
-            disabled={loading || !startDate || !endDate}
+            disabled={
+              exporting ||
+              loadingPreview ||
+              !startDate ||
+              !endDate ||
+              isDateRangeInvalid ||
+              previewTickets.length === 0
+            }
             className="btn-primary w-full"
           >
-            {loading ? (
+            {exporting ? (
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
             ) : (
               <>
@@ -333,6 +458,73 @@ const Reports = () => {
           </button>
         </div>
       </div>
+
+      {/* Live Monthly Summary Preview */}
+      {!isDateRangeInvalid && monthlySummary.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900">
+              Monthly Summary Preview
+            </h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider">
+                <tr>
+                  <th className="px-4 py-3">Month</th>
+                  <th className="px-4 py-3 text-right">Total</th>
+                  <th className="px-4 py-3 text-right">Pending</th>
+                  <th className="px-4 py-3 text-right">Released</th>
+                  <th className="px-4 py-3 text-right">Recommended</th>
+                  <th className="px-4 py-3 text-right">Disapproved</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 tabular-nums">
+                {monthlySummary.map((row) => (
+                  <tr key={row.key} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      {row.label}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold">
+                      {row.total}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-600">
+                      {row.pending} ({row.pendingPct})
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-600">
+                      {row.released} ({row.releasedPct})
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-600">
+                      {row.recommended} ({row.recommendedPct})
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-600">
+                      {row.disapproved} ({row.disapprovedPct})
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-gray-50 font-semibold text-gray-900 border-t border-gray-200 tabular-nums">
+                <tr>
+                  <td className="px-4 py-3">TOTAL</td>
+                  <td className="px-4 py-3 text-right">{totals.total}</td>
+                  <td className="px-4 py-3 text-right">
+                    {totals.pending} ({totals.pendingPct})
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {totals.released} ({totals.releasedPct})
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {totals.recommended} ({totals.recommendedPct})
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {totals.disapproved} ({totals.disapprovedPct})
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Info */}
       <div className="text-sm text-gray-500 space-y-2">
