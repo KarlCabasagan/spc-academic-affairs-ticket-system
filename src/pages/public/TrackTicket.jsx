@@ -40,6 +40,7 @@ const TrackTicket = () => {
   const [personnel, setPersonnel] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [errorType, setErrorType] = useState(null);
   const [copied, setCopied] = useState(false);
   const [quickCode, setQuickCode] = useState("");
 
@@ -52,8 +53,9 @@ const TrackTicket = () => {
       if (!lookupCode || !normalized.isValid) {
         setTicket(null);
         setPersonnel(null);
+        setErrorType("invalid");
         setError(
-          "Invalid ticket code format. Please enter a complete code such as SPC-8X92.",
+          "Invalid ticket code format. Enter a complete code such as SPC-8X92.",
         );
         setLoading(false);
         return;
@@ -64,6 +66,7 @@ const TrackTicket = () => {
           setLoading(true);
         }
         setError(null);
+        setErrorType(null);
         setPersonnel(null);
 
         const { data, error: fetchError } = await supabase
@@ -91,8 +94,9 @@ const TrackTicket = () => {
         if (fetchError) {
           setTicket(null);
           if (fetchError.code === "PGRST116") {
+            setErrorType("not_found");
             setError(
-              "Ticket not found. Verify the code on your claim slip and try again.",
+              "No ticket matched that code. Verify the code on your claim slip and try again.",
             );
           } else {
             throw fetchError;
@@ -115,8 +119,9 @@ const TrackTicket = () => {
         }
       } catch (err) {
         console.error("Error fetching ticket:", err);
+        setErrorType("network");
         setError(
-          "An error occurred while fetching the ticket. Please try again.",
+          "Unable to reach the ticket registry right now. Check your connection and try again.",
         );
       } finally {
         setLoading(false);
@@ -192,7 +197,13 @@ const TrackTicket = () => {
           <div className="w-12 h-12 bg-[#fdf1f1] border border-[#f4c5c5] rounded-lg flex items-center justify-center mx-auto mb-5">
             <AlertCircle size={22} className="text-[#991b1b]" />
           </div>
-          <h1 className="text-xl font-bold text-ink mb-2">Ticket Not Found</h1>
+          <h1 className="text-xl font-bold text-ink mb-2">
+            {errorType === "network"
+              ? "Unable to Look Up Ticket"
+              : errorType === "invalid"
+                ? "Invalid Ticket Code"
+                : "Ticket Not Found"}
+          </h1>
           <p className="text-sm text-ink-muted mb-6 prose-measure mx-auto">
             {error}
           </p>
@@ -204,7 +215,7 @@ const TrackTicket = () => {
               value={quickCode}
               onChange={(e) => setQuickCode(e.target.value.toUpperCase())}
               placeholder="Try SPC-8X92"
-              className="input font-mono uppercase text-sm"
+              className="input font-mono uppercase placeholder:normal-case text-sm"
             />
             <button type="submit" className="btn-primary shrink-0">
               <Search size={16} />
@@ -212,10 +223,21 @@ const TrackTicket = () => {
             </button>
           </form>
 
-          <Link to="/" className="btn-ghost w-full">
-            <ArrowLeft size={16} />
-            <span>Return to Document Tracker</span>
-          </Link>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
+            {errorType === "network" && (
+              <button
+                type="button"
+                onClick={() => fetchTicket({ showSpinner: true })}
+                className="btn-secondary w-full sm:w-auto"
+              >
+                Retry Lookup
+              </button>
+            )}
+            <Link to="/" className="btn-ghost w-full sm:w-auto">
+              <ArrowLeft size={16} />
+              <span>Return to Document Tracker</span>
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -259,7 +281,7 @@ const TrackTicket = () => {
                 value={quickCode}
                 onChange={(e) => setQuickCode(e.target.value.toUpperCase())}
                 placeholder="Track another code…"
-                className="input py-1.5 min-h-[40px] w-44 font-mono text-xs uppercase"
+                className="input py-1.5 min-h-[40px] w-44 font-mono text-xs uppercase placeholder:normal-case"
               />
               <button type="submit" className="btn-secondary px-3">
                 <Search size={14} />

@@ -133,7 +133,7 @@ const Login = () => {
         <div className="pt-6 border-t border-white/15 flex items-center justify-between text-xs text-maroon-200">
           <Link
             to="/"
-            className="inline-flex items-center gap-2 text-white hover:text-maroon-100 font-medium transition-colors"
+            className="inline-flex items-center gap-2 py-2 -my-2 text-white hover:text-maroon-100 font-medium transition-colors"
           >
             <ArrowLeft size={15} />
             <span>Public Document Tracker</span>
@@ -149,7 +149,7 @@ const Login = () => {
           <div className="flex items-center justify-between lg:hidden">
             <Link
               to="/"
-              className="inline-flex items-center gap-2 text-sm font-medium text-ink-muted hover:text-maroon-700"
+              className="inline-flex items-center gap-2 py-2 -my-2 text-sm font-medium text-ink-muted hover:text-maroon-700"
             >
               <ArrowLeft size={16} />
               <span>Document Tracker</span>
@@ -224,7 +224,7 @@ const Login = () => {
                       <button
                         type="button"
                         onClick={() => setMode("forgot")}
-                        className="text-xs text-maroon-700 hover:text-maroon-800 font-semibold cursor-pointer"
+                        className="text-xs text-maroon-700 hover:text-maroon-800 font-semibold py-1.5 -my-1.5 px-1 cursor-pointer"
                       >
                         Forgot password?
                       </button>
@@ -295,7 +295,7 @@ const Login = () => {
                     onClick={() =>
                       setMode(mode === "login" ? "signup" : "login")
                     }
-                    className="text-maroon-700 hover:text-maroon-800 font-semibold ml-1.5 cursor-pointer"
+                    className="text-maroon-700 hover:text-maroon-800 font-semibold ml-1.5 py-1.5 -my-1.5 px-1 cursor-pointer"
                   >
                     {mode === "login" ? "Create account" : "Sign in"}
                   </button>
