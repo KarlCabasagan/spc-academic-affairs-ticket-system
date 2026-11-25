@@ -8,6 +8,7 @@ import {
   UserPlus,
   ArrowLeft,
   KeyRound,
+  AlertCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -81,187 +82,229 @@ const Login = () => {
   const getTitle = () => {
     switch (mode) {
       case "signup":
-        return "Create Account";
+        return "Create Staff Account";
       case "forgot":
         return "Reset Password";
       default:
-        return "Welcome Back";
+        return "Staff Portal Sign In";
     }
   };
 
   const getSubtitle = () => {
     switch (mode) {
       case "signup":
-        return "Register to manage tickets";
+        return "Register an Academic Affairs staff profile to log and route tickets.";
       case "forgot":
-        return "Enter your email to receive a reset link";
+        return "Enter your institutional email address to receive a recovery link.";
       default:
-        return "Sign in to access the dashboard";
+        return "Sign in with your OVPAA staff credentials to continue.";
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-gray-50 to-gray-100 p-4">
-      <div className="w-full max-w-md">
-        {/* Back to Home */}
-        <Link
-          to="/"
-          className="inline-flex items-center gap-2 text-gray-600 hover:text-maroon-700 mb-8 transition-colors"
-        >
-          <ArrowLeft size={18} />
-          <span>Back to Home</span>
-        </Link>
-
-        {/* Card */}
-        <div className="card p-8 animate-slideUp">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <img
-              src="/icon-192.png"
-              alt="SPC Logo"
-              className="w-16 h-16 rounded-2xl mx-auto mb-4 object-cover"
-            />
-            <h1 className="text-2xl font-bold text-gray-900">{getTitle()}</h1>
-            <p className="text-gray-500 mt-2">{getSubtitle()}</p>
-          </div>
-
-          {/* Disabled Account Notice */}
-          {disabledNotice && (
-            <div
-              role="alert"
-              className="mb-5 p-3.5 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700"
-            >
-              {disabledNotice}
-            </div>
-          )}
-
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {mode === "signup" && (
-              <div>
-                <label htmlFor="fullName" className="label">
-                  Full Name
-                </label>
-                <input
-                  id="fullName"
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="input"
-                  placeholder="Enter your full name"
-                  required
-                />
-              </div>
-            )}
-
-            <div>
-              <label htmlFor="email" className="label">
-                Email Address
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="input"
-                placeholder="you@example.com"
-                required
-              />
-            </div>
-
-            {mode !== "forgot" && (
-              <div>
-                <label htmlFor="password" className="label">
-                  Password
-                </label>
-                <div className="relative">
-                  <input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="input pr-12"
-                    placeholder="Enter your password"
-                    required
-                    minLength={6}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Forgot password link - only show on login */}
-            {mode === "login" && (
-              <div className="text-right">
-                <button
-                  type="button"
-                  onClick={() => setMode("forgot")}
-                  className="text-sm text-maroon-700 hover:text-maroon-800 font-medium"
-                >
-                  Forgot password?
-                </button>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary w-full"
-            >
-              {loading ? (
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <>
-                  {mode === "login" && <LogIn size={18} />}
-                  {mode === "signup" && <UserPlus size={18} />}
-                  {mode === "forgot" && <KeyRound size={18} />}
-                  {mode === "login" && "Sign In"}
-                  {mode === "signup" && "Create Account"}
-                  {mode === "forgot" && "Send Reset Link"}
-                </>
-              )}
-            </button>
-          </form>
-
-          {/* Toggle / Back links */}
-          <div className="mt-6 text-center space-y-2">
-            {mode === "forgot" ? (
-              <button
-                type="button"
-                onClick={() => setMode("login")}
-                className="text-maroon-700 hover:text-maroon-800 font-medium text-sm inline-flex items-center gap-1"
-              >
-                <ArrowLeft size={16} />
-                Back to Sign In
-              </button>
-            ) : (
-              <p className="text-gray-500 text-sm">
-                {mode === "login"
-                  ? "Don't have an account?"
-                  : "Already have an account?"}
-                <button
-                  type="button"
-                  onClick={() => setMode(mode === "login" ? "signup" : "login")}
-                  className="text-maroon-700 hover:text-maroon-800 font-medium ml-1"
-                >
-                  {mode === "login" ? "Sign up" : "Sign in"}
-                </button>
-              </p>
-            )}
+    <div className="min-h-[100dvh] grid lg:grid-cols-12 bg-canvas text-ink">
+      {/* Left Institutional Panel */}
+      <aside className="hidden lg:flex lg:col-span-5 bg-maroon-900 text-white flex-col justify-between p-10 xl:p-12 border-r border-maroon-950">
+        <div className="flex items-center gap-3.5">
+          <img
+            src="/icon-192.png"
+            alt="St. Peter's College 1952 Crest"
+            className="w-12 h-12 rounded-full object-cover border border-white/25 shrink-0"
+          />
+          <div>
+            <p className="font-semibold text-base tracking-tight">
+              St. Peter&apos;s College
+            </p>
+            <p className="text-xs text-maroon-200">Iligan City · Est. 1952</p>
           </div>
         </div>
 
-        {/* Footer */}
-        <p className="text-center text-gray-400 text-sm mt-6">
-          SPC Academic Affairs Ticket System
-        </p>
-      </div>
+        <div className="space-y-4 max-w-md">
+          <h2 className="text-3xl font-bold tracking-tight leading-tight text-white">
+            Office of the Vice President for Academic Affairs
+          </h2>
+          <p className="text-sm text-maroon-100 leading-relaxed prose-measure">
+            Centralized intake console for logging document requests, assigning
+            receiving personnel, updating routing decisions, and generating
+            monthly OVPAA summary workbooks.
+          </p>
+        </div>
+
+        <div className="pt-6 border-t border-white/15 flex items-center justify-between text-xs text-maroon-200">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-white hover:text-maroon-100 font-medium transition-colors"
+          >
+            <ArrowLeft size={15} />
+            <span>Public Document Tracker</span>
+          </Link>
+          <span>OVPAA Registry</span>
+        </div>
+      </aside>
+
+      {/* Right Auth Form Column */}
+      <main className="lg:col-span-7 flex flex-col justify-center px-4 py-10 sm:px-8">
+        <div className="w-full max-w-md mx-auto space-y-6">
+          {/* Mobile Back + Crest */}
+          <div className="flex items-center justify-between lg:hidden">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 text-sm font-medium text-ink-muted hover:text-maroon-700"
+            >
+              <ArrowLeft size={16} />
+              <span>Document Tracker</span>
+            </Link>
+            <img
+              src="/icon-192.png"
+              alt="SPC Crest"
+              className="w-9 h-9 rounded-full object-cover border border-border"
+            />
+          </div>
+
+          <div className="card p-6 sm:p-8 animate-fadeIn">
+            <div className="mb-6">
+              <h1 className="text-2xl font-bold text-ink tracking-tight">
+                {getTitle()}
+              </h1>
+              <p className="text-sm text-ink-muted mt-1.5 leading-relaxed">
+                {getSubtitle()}
+              </p>
+            </div>
+
+            {disabledNotice && (
+              <div
+                role="alert"
+                className="mb-5 p-3.5 rounded-md bg-[#fdf1f1] border border-[#f4c5c5] text-sm text-[#991b1b] flex items-start gap-2.5"
+              >
+                <AlertCircle size={17} className="shrink-0 mt-0.5" />
+                <span>{disabledNotice}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {mode === "signup" && (
+                <div>
+                  <label htmlFor="fullName" className="label">
+                    Full Name
+                  </label>
+                  <input
+                    id="fullName"
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="input"
+                    placeholder="Enter your full name"
+                    required
+                  />
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="email" className="label">
+                  Email Address
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="input"
+                  placeholder="name@spc.edu.ph"
+                  required
+                />
+              </div>
+
+              {mode !== "forgot" && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label htmlFor="password" className="label mb-0">
+                      Password
+                    </label>
+                    {mode === "login" && (
+                      <button
+                        type="button"
+                        onClick={() => setMode("forgot")}
+                        className="text-xs text-maroon-700 hover:text-maroon-800 font-semibold cursor-pointer"
+                      >
+                        Forgot password?
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="input pr-12"
+                      placeholder="Enter your password"
+                      required
+                      minLength={6}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      className="icon-btn absolute right-0.5 top-1/2 -translate-y-1/2"
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary w-full mt-2"
+              >
+                {loading ? (
+                  <span>Please wait…</span>
+                ) : (
+                  <>
+                    {mode === "login" && <LogIn size={16} />}
+                    {mode === "signup" && <UserPlus size={16} />}
+                    {mode === "forgot" && <KeyRound size={16} />}
+                    <span>
+                      {mode === "login" && "Sign In"}
+                      {mode === "signup" && "Create Account"}
+                      {mode === "forgot" && "Send Reset Link"}
+                    </span>
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-6 pt-5 border-t border-border text-center">
+              {mode === "forgot" ? (
+                <button
+                  type="button"
+                  onClick={() => setMode("login")}
+                  className="text-maroon-700 hover:text-maroon-800 font-medium text-sm inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ArrowLeft size={15} />
+                  <span>Back to Sign In</span>
+                </button>
+              ) : (
+                <p className="text-ink-muted text-sm">
+                  {mode === "login"
+                    ? "Need an admin account?"
+                    : "Already registered?"}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMode(mode === "login" ? "signup" : "login")
+                    }
+                    className="text-maroon-700 hover:text-maroon-800 font-semibold ml-1.5 cursor-pointer"
+                  >
+                    {mode === "login" ? "Create account" : "Sign in"}
+                  </button>
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </main>
     </div>
   );
 };
