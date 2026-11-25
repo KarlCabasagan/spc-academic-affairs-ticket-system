@@ -11,7 +11,7 @@ import {
   Search,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { useAuth } from "../../contexts/AuthContext";
+import { useAuth } from "../../hooks/useAuth";
 
 const Team = () => {
   const { isSuperAdmin, user } = useAuth();

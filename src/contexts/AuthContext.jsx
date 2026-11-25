@@ -1,23 +1,23 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 
-const AuthContext = createContext({});
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
-};
+export const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [isRecoverySession, setIsRecoverySession] = useState(false);
 
-  // Fetch user profile from database
-  const fetchProfile = async (userId) => {
+  const fetchProfile = useCallback(async (userId) => {
+    if (!userId) {
+      setProfile(null);
+      setProfileLoading(false);
+      return null;
+    }
+
+    setProfileLoading(true);
     try {
       const { data, error } = await supabase
         .from("profiles")
@@ -27,58 +27,83 @@ export const AuthProvider = ({ children }) => {
 
       if (error) throw error;
       setProfile(data);
+      return data;
     } catch (error) {
       console.error("Error fetching profile:", error);
       setProfile(null);
+      return null;
+    } finally {
+      setProfileLoading(false);
     }
-  };
+  }, []);
 
-  // Initialize auth state
   useEffect(() => {
-    // Get initial session
+    let isMounted = true;
+
     const initAuth = async () => {
       try {
         const {
           data: { session },
         } = await supabase.auth.getSession();
-        setUser(session?.user ?? null);
 
-        if (session?.user) {
-          await fetchProfile(session.user.id);
+        if (!isMounted) return;
+
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+
+        if (currentUser) {
+          await fetchProfile(currentUser.id);
+        } else {
+          setProfile(null);
+          setProfileLoading(false);
         }
       } catch (error) {
         console.error("Error initializing auth:", error);
+        if (isMounted) {
+          setProfile(null);
+          setProfileLoading(false);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     initAuth();
 
-    // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setUser(session?.user ?? null);
+      if (!isMounted) return;
 
-      if (session?.user) {
-        // Small delay to ensure profile trigger has completed
-        setTimeout(() => fetchProfile(session.user.id), 100);
-      } else {
-        setProfile(null);
+      if (event === "PASSWORD_RECOVERY") {
+        setIsRecoverySession(true);
+      } else if (event === "SIGNED_OUT") {
+        setIsRecoverySession(false);
       }
 
-      if (event === "SIGNED_OUT") {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+
+      if (currentUser) {
+        await fetchProfile(currentUser.id);
+      } else {
         setProfile(null);
+        setProfileLoading(false);
+      }
+
+      if (isMounted) {
+        setLoading(false);
       }
     });
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [fetchProfile]);
 
-  // Sign in with email and password
   const signIn = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -86,10 +111,14 @@ export const AuthProvider = ({ children }) => {
     });
 
     if (error) throw error;
-    return data;
+
+    const fetchedProfile = data?.user
+      ? await fetchProfile(data.user.id)
+      : null;
+
+    return { ...data, profile: fetchedProfile };
   };
 
-  // Sign up with email and password
   const signUp = async (email, password, fullName) => {
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -105,15 +134,15 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
-  // Sign out
   const signOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
     setUser(null);
     setProfile(null);
+    setIsRecoverySession(false);
+    setProfileLoading(false);
   };
 
-  // Update profile
   const updateProfile = async (updates) => {
     if (!user) throw new Error("No user logged in");
 
@@ -129,10 +158,6 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
-  // Check if user is super admin
-  const isSuperAdmin = profile?.role === "super_admin";
-
-  // Reset password - send email
   const resetPassword = async (email) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
@@ -140,18 +165,22 @@ export const AuthProvider = ({ children }) => {
     if (error) throw error;
   };
 
-  // Update password - after user clicks reset link
   const updatePassword = async (newPassword) => {
     const { error } = await supabase.auth.updateUser({
       password: newPassword,
     });
     if (error) throw error;
+    setIsRecoverySession(false);
   };
+
+  const isSuperAdmin = profile?.role === "super_admin";
 
   const value = {
     user,
     profile,
     loading,
+    profileLoading,
+    isRecoverySession,
     signIn,
     signUp,
     signOut,
@@ -159,7 +188,7 @@ export const AuthProvider = ({ children }) => {
     resetPassword,
     updatePassword,
     isSuperAdmin,
-    refreshProfile: () => user && fetchProfile(user.id),
+    refreshProfile: () => (user ? fetchProfile(user.id) : Promise.resolve(null)),
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
