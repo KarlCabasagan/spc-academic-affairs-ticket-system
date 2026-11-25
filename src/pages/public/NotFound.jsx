@@ -7,23 +7,20 @@ const NotFound = () => {
 
   return (
     <div className="flex-1 flex items-center justify-center px-4 py-16 sm:py-24">
-      <div className="max-w-md w-full text-center">
-        <div className="w-14 h-14 bg-maroon-50 border border-maroon-200 rounded-xl flex items-center justify-center mx-auto mb-6">
-          <FileWarning size={26} className="text-maroon-700" />
+      <div className="card max-w-md w-full p-8 text-center animate-fadeIn">
+        <div className="w-12 h-12 bg-maroon-50 border border-maroon-200 rounded-lg flex items-center justify-center mx-auto mb-5">
+          <FileWarning size={22} className="text-maroon-700" />
         </div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-maroon-700 mb-2">
-          Error 404
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3">
-          Page Not Found
+        <h1 className="text-2xl font-bold text-ink tracking-tight mb-2.5 tabular-nums">
+          404 — Page Not Found
         </h1>
-        <p className="text-gray-600 mb-8 max-w-sm mx-auto">
+        <p className="text-sm text-ink-muted mb-7 max-w-[40ch] mx-auto leading-relaxed">
           The page or ticket route you requested does not exist or may have been
           moved.
         </p>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
           <Link to="/" className="btn-primary w-full sm:w-auto">
-            <Search size={18} />
+            <Search size={16} />
             <span>Document Tracker</span>
           </Link>
           {user ? (
@@ -31,13 +28,13 @@ const NotFound = () => {
               to="/admin/dashboard"
               className="btn-secondary w-full sm:w-auto"
             >
-              <LayoutDashboard size={18} />
+              <LayoutDashboard size={16} />
               <span>Admin Dashboard</span>
             </Link>
           ) : (
             <Link to="/login" className="btn-secondary w-full sm:w-auto">
-              <ArrowLeft size={18} />
-              <span>Staff Login</span>
+              <ArrowLeft size={16} />
+              <span>Staff Portal</span>
             </Link>
           )}
         </div>
