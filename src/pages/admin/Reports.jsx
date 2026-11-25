@@ -8,7 +8,9 @@ import {
   formatExcelSheetName,
   formatShortDate,
 } from "../../lib/dateUtils";
-import { FileSpreadsheet, Download, AlertCircle } from "lucide-react";
+import { TableSkeleton } from "../../components/ui/Skeleton";
+import EmptyState from "../../components/ui/EmptyState";
+import { FileSpreadsheet, Download, AlertCircle, Calendar } from "lucide-react";
 import toast from "react-hot-toast";
 
 const buildMonthlySummary = (tickets) => {
@@ -30,7 +32,7 @@ const buildMonthlySummary = (tickets) => {
     byMonth[key].tickets.push(ticket);
   });
 
-  const rows = Object.keys(byMonth)
+  return Object.keys(byMonth)
     .sort()
     .map((key) => {
       const group = byMonth[key];
@@ -53,21 +55,84 @@ const buildMonthlySummary = (tickets) => {
         tickets: group.tickets,
         total,
         pending,
-        pendingPct: total > 0 ? `${((pending / total) * 100).toFixed(1)}%` : "0%",
+        pendingPct: total > 0 ? `${((pending / total) * 100).toFixed(1)}%` : "0.0%",
         released,
         releasedPct:
-          total > 0 ? `${((released / total) * 100).toFixed(1)}%` : "0%",
+          total > 0 ? `${((released / total) * 100).toFixed(1)}%` : "0.0%",
         recommended,
         recommendedPct:
-          total > 0 ? `${((recommended / total) * 100).toFixed(1)}%` : "0%",
+          total > 0 ? `${((recommended / total) * 100).toFixed(1)}%` : "0.0%",
         disapproved,
         disapprovedPct:
-          total > 0 ? `${((disapproved / total) * 100).toFixed(1)}%` : "0%",
+          total > 0 ? `${((disapproved / total) * 100).toFixed(1)}%` : "0.0%",
       };
     });
-
-  return rows;
 };
+
+const DATE_PRESETS = [
+  {
+    id: "this_month",
+    label: "This Month",
+    getRange: () => {
+      const now = new Date();
+      return {
+        start: toLocalDateInputValue(
+          new Date(now.getFullYear(), now.getMonth(), 1),
+        ),
+        end: toLocalDateInputValue(now),
+      };
+    },
+  },
+  {
+    id: "last_30",
+    label: "Last 30 Days",
+    getRange: () => {
+      const now = new Date();
+      const past = new Date(now);
+      past.setDate(past.getDate() - 29);
+      return {
+        start: toLocalDateInputValue(past),
+        end: toLocalDateInputValue(now),
+      };
+    },
+  },
+  {
+    id: "this_quarter",
+    label: "This Quarter",
+    getRange: () => {
+      const now = new Date();
+      const qMonth = Math.floor(now.getMonth() / 3) * 3;
+      return {
+        start: toLocalDateInputValue(new Date(now.getFullYear(), qMonth, 1)),
+        end: toLocalDateInputValue(now),
+      };
+    },
+  },
+  {
+    id: "ytd",
+    label: "Year to Date",
+    getRange: () => {
+      const now = new Date();
+      return {
+        start: toLocalDateInputValue(new Date(now.getFullYear(), 0, 1)),
+        end: toLocalDateInputValue(now),
+      };
+    },
+  },
+  {
+    id: "last_12m",
+    label: "Last 12 Months",
+    getRange: () => {
+      const now = new Date();
+      const past = new Date(now);
+      past.setFullYear(past.getFullYear() - 1);
+      return {
+        start: toLocalDateInputValue(past),
+        end: toLocalDateInputValue(now),
+      };
+    },
+  },
+];
 
 const Reports = () => {
   const [startDate, setStartDate] = useState(() => {
@@ -76,6 +141,7 @@ const Reports = () => {
     return toLocalDateInputValue(oneYearAgo);
   });
   const [endDate, setEndDate] = useState(() => toLocalDateInputValue());
+  const [activePreset, setActivePreset] = useState("last_12m");
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [departments, setDepartments] = useState([]);
   const [previewTickets, setPreviewTickets] = useState([]);
@@ -140,6 +206,13 @@ const Reports = () => {
     fetchPreview();
   }, [startDate, endDate, departmentFilter, isDateRangeInvalid]);
 
+  const applyPreset = (preset) => {
+    const { start, end } = preset.getRange();
+    setStartDate(start);
+    setEndDate(end);
+    setActivePreset(preset.id);
+  };
+
   const monthlySummary = useMemo(
     () => buildMonthlySummary(previewTickets),
     [previewTickets],
@@ -161,16 +234,16 @@ const Reports = () => {
     return {
       total,
       pending,
-      pendingPct: total > 0 ? `${((pending / total) * 100).toFixed(1)}%` : "0%",
+      pendingPct: total > 0 ? `${((pending / total) * 100).toFixed(1)}%` : "0.0%",
       released,
       releasedPct:
-        total > 0 ? `${((released / total) * 100).toFixed(1)}%` : "0%",
+        total > 0 ? `${((released / total) * 100).toFixed(1)}%` : "0.0%",
       recommended,
       recommendedPct:
-        total > 0 ? `${((recommended / total) * 100).toFixed(1)}%` : "0%",
+        total > 0 ? `${((recommended / total) * 100).toFixed(1)}%` : "0.0%",
       disapproved,
       disapprovedPct:
-        total > 0 ? `${((disapproved / total) * 100).toFixed(1)}%` : "0%",
+        total > 0 ? `${((disapproved / total) * 100).toFixed(1)}%` : "0.0%",
     };
   }, [previewTickets]);
 
@@ -214,10 +287,7 @@ const Reports = () => {
       }
 
       const rowsByMonth = buildMonthlySummary(tickets);
-
-      // Lazy-load SheetJS only when exporting
       const XLSX = await import("xlsx");
-
       const workbook = XLSX.utils.book_new();
 
       const summaryData = rowsByMonth.map((m) => ({
@@ -309,7 +379,6 @@ const Reports = () => {
           { wch: 14 },
         ];
 
-        // Guarantee unique Excel-safe sheet name (<= 31 chars, e.g. "Sep 2026")
         const baseName = monthGroup.sheetBase.slice(0, 31);
         let sheetName = baseName;
         let suffix = 2;
@@ -334,187 +403,232 @@ const Reports = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn">
+    <div className="max-w-6xl mx-auto space-y-6 animate-fadeIn">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
-        <p className="text-gray-500 mt-1">
-          Preview monthly summaries and export tickets to Excel.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-ink tracking-tight">
+            Reports &amp; Export
+          </h1>
+          <p className="text-sm text-ink-muted mt-1">
+            Review monthly summaries and export multi-sheet Excel workbooks.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={exportToExcel}
+          disabled={
+            exporting ||
+            loadingPreview ||
+            !startDate ||
+            !endDate ||
+            isDateRangeInvalid ||
+            previewTickets.length === 0
+          }
+          className="btn-primary self-start sm:self-auto"
+        >
+          <Download size={16} />
+          <span>{exporting ? "Exporting…" : "Export Excel (.xlsx)"}</span>
+        </button>
       </div>
 
-      {/* Export Card */}
-      <div className="card p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-            <FileSpreadsheet size={24} className="text-green-600" />
+      {/* Filter & Preset Controls */}
+      <section className="card p-5 space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-muted mr-1">
+            <Calendar size={13} />
+            <span>Range:</span>
+          </span>
+          {DATE_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => applyPreset(preset)}
+              className={`px-3 py-1.5 min-h-[34px] rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                activePreset === preset.id
+                  ? "bg-maroon-700 text-white"
+                  : "bg-rail text-ink-muted hover:text-ink border border-border"
+              }`}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-border">
+          <div>
+            <label htmlFor="startDate" className="label">
+              Start Date
+            </label>
+            <input
+              id="startDate"
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                setActivePreset(null);
+                setStartDate(e.target.value);
+              }}
+              className="input"
+            />
           </div>
           <div>
-            <h2 className="font-semibold text-gray-900">Export to Excel</h2>
-            <p className="text-sm text-gray-500">
-              Download tickets with monthly breakdown
+            <label htmlFor="endDate" className="label">
+              End Date
+            </label>
+            <input
+              id="endDate"
+              type="date"
+              value={endDate}
+              onChange={(e) => {
+                setActivePreset(null);
+                setEndDate(e.target.value);
+              }}
+              className="input"
+            />
+          </div>
+          <div>
+            <label htmlFor="reportDepartment" className="label">
+              Origin Department
+            </label>
+            <select
+              id="reportDepartment"
+              value={departmentFilter}
+              onChange={(e) => setDepartmentFilter(e.target.value)}
+              className="select"
+            >
+              <option value="">All Departments</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {isDateRangeInvalid && (
+          <div
+            role="alert"
+            className="flex items-center gap-2 p-3 rounded-md bg-[#fdf1f1] border border-[#f4c5c5] text-sm text-[#991b1b]"
+          >
+            <AlertCircle size={16} className="shrink-0" />
+            <span>Start date must be on or before end date.</span>
+          </div>
+        )}
+      </section>
+
+      {/* KPI Summary Strip */}
+      {!isDateRangeInvalid && !loadingPreview && (
+        <section className="card grid grid-cols-2 lg:grid-cols-5 divide-y lg:divide-y-0 lg:divide-x divide-border">
+          <div className="p-4">
+            <p className="eyebrow">Total Matched</p>
+            <p className="font-mono text-2xl font-semibold text-ink mt-1 tabular-nums">
+              {totals.total}
             </p>
           </div>
-        </div>
-
-        <div className="space-y-4">
-          {/* Date Range + Department */}
-          <div className="grid sm:grid-cols-3 gap-4">
-            <div>
-              <label htmlFor="startDate" className="label">
-                Start Date
-              </label>
-              <input
-                id="startDate"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="input"
-              />
-            </div>
-            <div>
-              <label htmlFor="endDate" className="label">
-                End Date
-              </label>
-              <input
-                id="endDate"
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="input"
-              />
-            </div>
-            <div>
-              <label htmlFor="reportDepartment" className="label">
-                Department
-              </label>
-              <select
-                id="reportDepartment"
-                value={departmentFilter}
-                onChange={(e) => setDepartmentFilter(e.target.value)}
-                className="select"
-              >
-                <option value="">All Departments</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="p-4">
+            <p className="eyebrow">Pending</p>
+            <p className="font-mono text-2xl font-semibold text-[#92400e] mt-1 tabular-nums">
+              {totals.pending}
+            </p>
+            <p className="text-xs text-ink-muted tabular-nums">
+              {totals.pendingPct}
+            </p>
           </div>
+          <div className="p-4">
+            <p className="eyebrow">Recommended</p>
+            <p className="font-mono text-2xl font-semibold text-[#1e40af] mt-1 tabular-nums">
+              {totals.recommended}
+            </p>
+            <p className="text-xs text-ink-muted tabular-nums">
+              {totals.recommendedPct}
+            </p>
+          </div>
+          <div className="p-4">
+            <p className="eyebrow">Released</p>
+            <p className="font-mono text-2xl font-semibold text-[#166534] mt-1 tabular-nums">
+              {totals.released}
+            </p>
+            <p className="text-xs text-ink-muted tabular-nums">
+              {totals.releasedPct}
+            </p>
+          </div>
+          <div className="p-4">
+            <p className="eyebrow">Disapproved</p>
+            <p className="font-mono text-2xl font-semibold text-[#991b1b] mt-1 tabular-nums">
+              {totals.disapproved}
+            </p>
+            <p className="text-xs text-ink-muted tabular-nums">
+              {totals.disapprovedPct}
+            </p>
+          </div>
+        </section>
+      )}
 
-          {isDateRangeInvalid && (
-            <div
-              role="alert"
-              className="flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700"
-            >
-              <AlertCircle size={16} className="shrink-0" />
-              <span>Start date must be on or before end date.</span>
-            </div>
-          )}
-
-          {/* Ticket Count Preview */}
-          {!isDateRangeInvalid && (
-            <div className="p-4 bg-gray-50 rounded-xl flex items-center justify-between gap-4">
-              <p className="text-sm text-gray-600 tabular-nums">
-                {loadingPreview ? (
-                  "Loading ticket summary…"
-                ) : (
-                  <>
-                    <span className="font-semibold text-gray-900">
-                      {previewTickets.length}
-                    </span>{" "}
-                    ticket{previewTickets.length !== 1 ? "s" : ""} found in
-                    selected range
-                  </>
-                )}
-              </p>
-            </div>
-          )}
-
-          {/* Export Button */}
-          <button
-            type="button"
-            onClick={exportToExcel}
-            disabled={
-              exporting ||
-              loadingPreview ||
-              !startDate ||
-              !endDate ||
-              isDateRangeInvalid ||
-              previewTickets.length === 0
-            }
-            className="btn-primary w-full"
-          >
-            {exporting ? (
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <>
-                <Download size={18} />
-                <span>Export to Excel</span>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Live Monthly Summary Preview */}
-      {!isDateRangeInvalid && monthlySummary.length > 0 && (
-        <div className="card overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900">
+      {/* Monthly Summary Table / Loading / Empty */}
+      {loadingPreview ? (
+        <TableSkeleton rows={4} />
+      ) : !isDateRangeInvalid && monthlySummary.length > 0 ? (
+        <section className="card overflow-hidden">
+          <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-ink">
               Monthly Summary Preview
             </h2>
+            <span className="text-xs text-ink-muted tabular-nums">
+              {monthlySummary.length} monthly sheet
+              {monthlySummary.length !== 1 ? "s" : ""} + Summary
+            </span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider">
-                <tr>
-                  <th className="px-4 py-3">Month</th>
-                  <th className="px-4 py-3 text-right">Total</th>
-                  <th className="px-4 py-3 text-right">Pending</th>
-                  <th className="px-4 py-3 text-right">Released</th>
-                  <th className="px-4 py-3 text-right">Recommended</th>
-                  <th className="px-4 py-3 text-right">Disapproved</th>
+            <table className="w-full text-sm text-left border-collapse">
+              <thead>
+                <tr className="bg-rail/60 border-b border-border">
+                  <th className="eyebrow px-4 py-3">Month</th>
+                  <th className="eyebrow px-4 py-3 text-right">Total</th>
+                  <th className="eyebrow px-4 py-3 text-right">Pending</th>
+                  <th className="eyebrow px-4 py-3 text-right">Recommended</th>
+                  <th className="eyebrow px-4 py-3 text-right">Released</th>
+                  <th className="eyebrow px-4 py-3 text-right">Disapproved</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 tabular-nums">
+              <tbody className="divide-y divide-border tabular-nums">
                 {monthlySummary.map((row) => (
-                  <tr key={row.key} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-gray-900">
+                  <tr key={row.key} className="hover:bg-canvas transition-colors">
+                    <td className="px-4 py-3 font-medium text-ink">
                       {row.label}
                     </td>
-                    <td className="px-4 py-3 text-right font-semibold">
+                    <td className="px-4 py-3 text-right font-mono font-semibold text-ink">
                       {row.total}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-600">
+                    <td className="px-4 py-3 text-right text-ink-muted">
                       {row.pending} ({row.pendingPct})
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-600">
-                      {row.released} ({row.releasedPct})
-                    </td>
-                    <td className="px-4 py-3 text-right text-gray-600">
+                    <td className="px-4 py-3 text-right text-ink-muted">
                       {row.recommended} ({row.recommendedPct})
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-600">
+                    <td className="px-4 py-3 text-right text-ink-muted">
+                      {row.released} ({row.releasedPct})
+                    </td>
+                    <td className="px-4 py-3 text-right text-ink-muted">
                       {row.disapproved} ({row.disapprovedPct})
                     </td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot className="bg-gray-50 font-semibold text-gray-900 border-t border-gray-200 tabular-nums">
+              <tfoot className="bg-rail/70 font-semibold text-ink border-t border-border-strong tabular-nums">
                 <tr>
                   <td className="px-4 py-3">TOTAL</td>
-                  <td className="px-4 py-3 text-right">{totals.total}</td>
+                  <td className="px-4 py-3 text-right font-mono">
+                    {totals.total}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     {totals.pending} ({totals.pendingPct})
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {totals.released} ({totals.releasedPct})
+                    {totals.recommended} ({totals.recommendedPct})
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {totals.recommended} ({totals.recommendedPct})
+                    {totals.released} ({totals.releasedPct})
                   </td>
                   <td className="px-4 py-3 text-right">
                     {totals.disapproved} ({totals.disapprovedPct})
@@ -523,18 +637,30 @@ const Reports = () => {
               </tfoot>
             </table>
           </div>
-        </div>
+        </section>
+      ) : (
+        !isDateRangeInvalid && (
+          <div className="card">
+            <EmptyState
+              icon={FileSpreadsheet}
+              title="No tickets in selected date range"
+              description="Adjust the start date, end date, or department filter to preview data for export."
+            />
+          </div>
+        )
       )}
 
-      {/* Info */}
-      <div className="text-sm text-gray-500 space-y-2">
+      {/* Workbook Notes */}
+      <div className="panel-recessed p-4 text-xs text-ink-muted space-y-1 prose-measure">
         <p>
-          <strong>Summary Tab:</strong> Monthly breakdown with status counts and
-          percentages (Pending, Released, Recommended, Disapproved).
+          <span className="font-semibold text-ink">Summary Sheet:</span> Monthly
+          totals with counts and percentages for Pending, Recommended, Released,
+          and Disapproved statuses.
         </p>
         <p>
-          <strong>Monthly Tabs:</strong> Separate sheets for each month
-          containing detailed ticket data.
+          <span className="font-semibold text-ink">Monthly Sheets:</span> One
+          tab per month containing docket code, subject, affected party,
+          department, receiving personnel, release destination, and remarks.
         </p>
       </div>
     </div>
