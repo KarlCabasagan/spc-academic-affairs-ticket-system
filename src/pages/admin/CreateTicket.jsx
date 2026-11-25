@@ -5,7 +5,10 @@ import { useAuth } from "../../hooks/useAuth";
 import {
   toLocalDateTimeInputValue,
   localDateTimeToISO,
+  formatDateTime,
 } from "../../lib/dateUtils";
+import StatusBadge from "../../components/ui/StatusBadge";
+import { DetailSkeleton } from "../../components/ui/Skeleton";
 import { Save, ArrowLeft, User } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -61,9 +64,7 @@ const CreateTicket = () => {
 
   const filteredSubjects = useMemo(
     () =>
-      subjects.filter(
-        (item) => item.name?.trim().toLowerCase() !== "others",
-      ),
+      subjects.filter((item) => item.name?.trim().toLowerCase() !== "others"),
     [subjects],
   );
 
@@ -71,6 +72,15 @@ const CreateTicket = () => {
     () => personnel.find((p) => p.id === formData.personnel_id) || null,
     [personnel, formData.personnel_id],
   );
+
+  const selectedDepartment = useMemo(
+    () => departments.find((d) => d.id === formData.department_id) || null,
+    [departments, formData.department_id],
+  );
+
+  const resolvedSubject = isOtherSubject
+    ? formData.customSubject.trim()
+    : formData.subject.trim();
 
   const handleSubjectChange = (e) => {
     const value = e.target.value;
@@ -88,9 +98,7 @@ const CreateTicket = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    const subject = isOtherSubject
-      ? formData.customSubject.trim()
-      : formData.subject.trim();
+    const subject = resolvedSubject;
     const affectedParty = formData.affected_party.trim();
     const nextErrors = {};
 
@@ -155,246 +163,321 @@ const CreateTicket = () => {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-10 h-10 border-4 border-maroon-700 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+    return <DetailSkeleton />;
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 animate-fadeIn">
+    <div className="max-w-5xl mx-auto space-y-6 animate-fadeIn">
       {/* Header */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={() => navigate("/admin/tickets")}
           aria-label="Back to tickets"
-          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+          className="icon-btn -ml-2"
         >
           <ArrowLeft size={20} />
         </button>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Create Ticket</h1>
-          <p className="text-gray-500 mt-1">Record a new document ticket.</p>
+          <h1 className="text-2xl font-bold text-ink tracking-tight">
+            Create Ticket
+          </h1>
+          <p className="text-sm text-ink-muted mt-0.5">
+            Log an incoming document request and assign initial routing details.
+          </p>
         </div>
       </div>
 
-      {/* Form */}
-      <form onSubmit={handleSubmit} className="card p-6 space-y-5" noValidate>
-        {/* Subject */}
-        <div>
-          <label htmlFor="subject" className="label">
-            Subject *
-          </label>
-          {!isOtherSubject ? (
-            <select
-              id="subject"
-              value={formData.subject || ""}
-              onChange={handleSubjectChange}
-              className={`select ${errors.subject ? "border-red-400" : ""}`}
-              required={!isOtherSubject}
-            >
-              <option value="">Select a subject…</option>
-              {filteredSubjects.map((s) => (
-                <option key={s.id} value={s.name}>
-                  {s.name}
-                </option>
-              ))}
-              <option value="Others">Others (Custom)</option>
-            </select>
-          ) : (
-            <div className="space-y-2">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Intake Form */}
+        <form
+          onSubmit={handleSubmit}
+          className="lg:col-span-8 card divide-y divide-border overflow-hidden"
+          noValidate
+        >
+          {/* Section 1: Document Details */}
+          <div className="p-6 space-y-4">
+            <h2 className="text-sm font-semibold text-ink">Document Details</h2>
+
+            <div>
+              <label htmlFor="subject" className="label">
+                Subject *
+              </label>
+              {!isOtherSubject ? (
+                <select
+                  id="subject"
+                  value={formData.subject || ""}
+                  onChange={handleSubjectChange}
+                  className={`select ${errors.subject ? "input-error" : ""}`}
+                  required={!isOtherSubject}
+                >
+                  <option value="">Select a subject…</option>
+                  {filteredSubjects.map((s) => (
+                    <option key={s.id} value={s.name}>
+                      {s.name}
+                    </option>
+                  ))}
+                  <option value="Others">Others (Custom)</option>
+                </select>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    id="subject"
+                    type="text"
+                    value={formData.customSubject}
+                    onChange={(e) => {
+                      setErrors((prev) => ({ ...prev, subject: undefined }));
+                      setFormData((prev) => ({
+                        ...prev,
+                        customSubject: e.target.value,
+                      }));
+                    }}
+                    className={`input ${errors.subject ? "input-error" : ""}`}
+                    placeholder="Enter custom subject"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOtherSubject(false);
+                      setErrors((prev) => ({ ...prev, subject: undefined }));
+                    }}
+                    className="text-xs font-medium text-maroon-700 hover:text-maroon-800 cursor-pointer"
+                  >
+                    ← Back to predefined subjects
+                  </button>
+                </div>
+              )}
+              {errors.subject && (
+                <p className="text-xs text-[#b91c1c] mt-1.5">
+                  {errors.subject}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="affected_party" className="label">
+                Affected Party *
+              </label>
               <input
-                id="subject"
+                id="affected_party"
                 type="text"
-                value={formData.customSubject}
+                value={formData.affected_party}
                 onChange={(e) => {
-                  setErrors((prev) => ({ ...prev, subject: undefined }));
+                  setErrors((prev) => ({ ...prev, affected_party: undefined }));
                   setFormData((prev) => ({
                     ...prev,
-                    customSubject: e.target.value,
+                    affected_party: e.target.value,
                   }));
                 }}
-                className={`input ${errors.subject ? "input-error" : ""}`}
-                placeholder="Enter custom subject"
+                className={`input ${errors.affected_party ? "input-error" : ""}`}
+                placeholder="Student, faculty member, or requesting office"
                 required
               />
-              <button
-                type="button"
-                onClick={() => {
-                  setIsOtherSubject(false);
-                  setErrors((prev) => ({ ...prev, subject: undefined }));
-                }}
-                className="text-sm text-maroon-700 hover:text-maroon-800"
-              >
-                ← Back to dropdown
-              </button>
+              {errors.affected_party && (
+                <p className="text-xs text-[#b91c1c] mt-1.5">
+                  {errors.affected_party}
+                </p>
+              )}
             </div>
-          )}
-          {errors.subject && (
-            <p className="text-xs text-red-600 mt-1">{errors.subject}</p>
-          )}
-        </div>
 
-        {/* Affected Party */}
-        <div>
-          <label htmlFor="affected_party" className="label">
-            Affected Party *
-          </label>
-          <input
-            id="affected_party"
-            type="text"
-            value={formData.affected_party}
-            onChange={(e) => {
-              setErrors((prev) => ({ ...prev, affected_party: undefined }));
-              setFormData((prev) => ({
-                ...prev,
-                affected_party: e.target.value,
-              }));
-            }}
-            className={`input ${errors.affected_party ? "input-error" : ""}`}
-            placeholder="Enter the name of the student or person"
-            required
-          />
-          {errors.affected_party && (
-            <p className="text-xs text-red-600 mt-1">{errors.affected_party}</p>
-          )}
-        </div>
-
-        {/* Department */}
-        <div>
-          <label htmlFor="department" className="label">
-            Origin Department
-          </label>
-          <select
-            id="department"
-            value={formData.department_id}
-            onChange={(e) =>
-              setFormData((prev) => ({
-                ...prev,
-                department_id: e.target.value,
-              }))
-            }
-            className="select"
-          >
-            <option value="">Select a department…</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Personnel */}
-        <div>
-          <label htmlFor="personnel" className="label">
-            Received By
-          </label>
-          <div className="relative">
-            <select
-              id="personnel"
-              value={formData.personnel_id}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  personnel_id: e.target.value,
-                }))
-              }
-              className="select"
-            >
-              <option value="">Select personnel…</option>
-              {personnel.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+            <div>
+              <label htmlFor="remarks" className="label">
+                Remarks (Optional)
+              </label>
+              <textarea
+                id="remarks"
+                value={formData.remarks}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, remarks: e.target.value }))
+                }
+                className="input min-h-[96px] resize-y"
+                placeholder="Initial routing notes or missing attachments…"
+              />
+            </div>
           </div>
-          {selectedPersonnel && (
-            <div className="mt-2 flex items-center gap-2 text-sm text-gray-600">
-              <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center overflow-hidden">
-                {selectedPersonnel.avatar_url ? (
-                  <img
-                    src={selectedPersonnel.avatar_url}
-                    alt={selectedPersonnel.name}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <User size={12} className="text-gray-400" />
+
+          {/* Section 2: Intake & Routing */}
+          <div className="p-6 space-y-4">
+            <h2 className="text-sm font-semibold text-ink">
+              Intake &amp; Routing
+            </h2>
+
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="department" className="label">
+                  Origin Department
+                </label>
+                <select
+                  id="department"
+                  value={formData.department_id}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      department_id: e.target.value,
+                    }))
+                  }
+                  className="select"
+                >
+                  <option value="">Select a department…</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="personnel" className="label">
+                  Received By
+                </label>
+                <select
+                  id="personnel"
+                  value={formData.personnel_id}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      personnel_id: e.target.value,
+                    }))
+                  }
+                  className="select"
+                >
+                  <option value="">Select personnel…</option>
+                  {personnel.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+                {selectedPersonnel && (
+                  <div className="mt-2 flex items-center gap-2 text-xs text-ink-muted">
+                    <div className="w-6 h-6 bg-rail rounded-full border border-border flex items-center justify-center overflow-hidden">
+                      {selectedPersonnel.avatar_url ? (
+                        <img
+                          src={selectedPersonnel.avatar_url}
+                          alt={selectedPersonnel.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <User size={12} className="text-ink-subtle" />
+                      )}
+                    </div>
+                    <span>{selectedPersonnel.name}</span>
+                  </div>
                 )}
               </div>
-              <span>{selectedPersonnel.name}</span>
             </div>
-          )}
-        </div>
 
-        {/* Received Date/Time */}
-        <div>
-          <label htmlFor="received_at" className="label">
-            Date &amp; Time Received *
-          </label>
-          <input
-            id="received_at"
-            type="datetime-local"
-            value={formData.received_at}
-            onChange={(e) => {
-              setErrors((prev) => ({ ...prev, received_at: undefined }));
-              setFormData((prev) => ({
-                ...prev,
-                received_at: e.target.value,
-              }));
-            }}
-            className={`input ${errors.received_at ? "input-error" : ""}`}
-            required
-          />
-          {errors.received_at && (
-            <p className="text-xs text-red-600 mt-1">{errors.received_at}</p>
-          )}
-        </div>
+            <div>
+              <label htmlFor="received_at" className="label">
+                Date &amp; Time Received *
+              </label>
+              <input
+                id="received_at"
+                type="datetime-local"
+                value={formData.received_at}
+                onChange={(e) => {
+                  setErrors((prev) => ({ ...prev, received_at: undefined }));
+                  setFormData((prev) => ({
+                    ...prev,
+                    received_at: e.target.value,
+                  }));
+                }}
+                className={`input ${errors.received_at ? "input-error" : ""}`}
+                required
+              />
+              {errors.received_at && (
+                <p className="text-xs text-[#b91c1c] mt-1.5">
+                  {errors.received_at}
+                </p>
+              )}
+            </div>
+          </div>
 
-        {/* Remarks */}
-        <div>
-          <label htmlFor="remarks" className="label">
-            Remarks (Optional)
-          </label>
-          <textarea
-            id="remarks"
-            value={formData.remarks}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, remarks: e.target.value }))
-            }
-            className="input min-h-[100px] resize-y"
-            placeholder="Add any notes or remarks…"
-          />
-        </div>
+          {/* Actions */}
+          <div className="px-6 py-4 bg-rail/40 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => navigate("/admin/tickets")}
+              className="btn-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="btn-primary"
+            >
+              <Save size={16} />
+              <span>{submitting ? "Creating…" : "Create Ticket"}</span>
+            </button>
+          </div>
+        </form>
 
-        {/* Submit */}
-        <div className="flex gap-3 pt-2">
-          <button
-            type="button"
-            onClick={() => navigate("/admin/tickets")}
-            className="btn-secondary flex-1"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="btn-primary flex-1"
-          >
-            {submitting ? (
-              "Creating…"
-            ) : (
-              <>
-                <Save size={18} />
-                <span>Create Ticket</span>
-              </>
+        {/* Live Public Docket Preview */}
+        <aside className="lg:col-span-4 panel-recessed p-5 space-y-4 lg:sticky lg:top-24">
+          <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
+            <h2 className="text-sm font-semibold text-ink">
+              Public Slip Preview
+            </h2>
+            <StatusBadge status="Pending" />
+          </div>
+
+          <div className="space-y-3 text-sm">
+            <div>
+              <p className="eyebrow">Ticket Code</p>
+              <p className="font-mono font-semibold text-maroon-700 mt-0.5">
+                SPC-XXXX <span className="text-xs font-normal text-ink-muted">(auto-assigned)</span>
+              </p>
+            </div>
+
+            <div>
+              <p className="eyebrow">Subject</p>
+              <p className="font-medium text-ink mt-0.5">
+                {resolvedSubject || "—"}
+              </p>
+            </div>
+
+            <div>
+              <p className="eyebrow">Origin Department</p>
+              <p className="text-ink-muted mt-0.5">
+                {selectedDepartment?.name || "Not specified"}
+              </p>
+            </div>
+
+            <div>
+              <p className="eyebrow">Received By</p>
+              <p className="text-ink-muted mt-0.5">
+                {selectedPersonnel?.name || "OVPAA Staff"}
+              </p>
+            </div>
+
+            <div>
+              <p className="eyebrow">Date Received</p>
+              <p className="text-ink-muted tabular-nums mt-0.5">
+                {formData.received_at
+                  ? formatDateTime(localDateTimeToISO(formData.received_at))
+                  : "—"}
+              </p>
+            </div>
+
+            {formData.remarks.trim() && (
+              <div className="pt-2 border-t border-border">
+                <p className="eyebrow">Remarks</p>
+                <p className="text-xs text-ink-muted mt-1 prose-measure">
+                  {formData.remarks.trim()}
+                </p>
+              </div>
             )}
-          </button>
-        </div>
-      </form>
+          </div>
+
+          <p className="text-xs text-ink-muted pt-2 border-t border-border">
+            Affected party names stay internal in the staff registry and are
+            not exposed on the public lookup page.
+          </p>
+        </aside>
+      </div>
     </div>
   );
 };
