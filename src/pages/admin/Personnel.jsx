@@ -1,22 +1,31 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import {
   validateAvatarFile,
   uploadAvatarFile,
   removeAvatarByUrl,
 } from "../../lib/storageUtils";
-import { Plus, Pencil, Trash2, Users, X, Upload, User } from "lucide-react";
+import Modal from "../../components/ui/Modal";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import { CardGridSkeleton } from "../../components/ui/Skeleton";
+import EmptyState from "../../components/ui/EmptyState";
+import { Plus, Pencil, Trash2, Users, Upload, User, Search } from "lucide-react";
 import toast from "react-hot-toast";
 
 const Personnel = () => {
   const [personnel, setPersonnel] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingPersonnel, setEditingPersonnel] = useState(null);
   const [formData, setFormData] = useState({ name: "", avatar_url: "" });
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
   const fileInputRef = useRef(null);
   const blobUrlRef = useRef(null);
 
@@ -53,6 +62,12 @@ const Personnel = () => {
   useEffect(() => {
     fetchPersonnel();
   }, []);
+
+  const filteredPersonnel = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return personnel;
+    return personnel.filter((p) => p.name.toLowerCase().includes(q));
+  }, [personnel, searchQuery]);
 
   const openModal = (person = null) => {
     revokeBlobPreview();
@@ -108,7 +123,6 @@ const Personnel = () => {
     try {
       let avatarUrl = formData.avatar_url || null;
 
-      // Upload new avatar first so existing file stays intact if upload or DB fails
       if (avatarFile) {
         const uploaded = await uploadAvatarFile(
           supabase,
@@ -139,7 +153,6 @@ const Personnel = () => {
         toast.success("Personnel created successfully");
       }
 
-      // Best-effort removal of old avatar after DB save succeeds
       if (newlyUploadedUrl && previousAvatarUrl) {
         await removeAvatarByUrl(supabase, previousAvatarUrl);
       }
@@ -148,7 +161,6 @@ const Personnel = () => {
       fetchPersonnel();
     } catch (error) {
       console.error("Error saving personnel:", error);
-      // Roll back newly uploaded object if DB write failed
       if (newlyUploadedUrl) {
         await removeAvatarByUrl(supabase, newlyUploadedUrl);
       }
@@ -158,60 +170,88 @@ const Personnel = () => {
     }
   };
 
-  const handleDelete = async (person) => {
-    if (!confirm(`Are you sure you want to delete "${person.name}"?`)) return;
-
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
       const { error } = await supabase
         .from("personnel")
         .delete()
-        .eq("id", person.id);
+        .eq("id", deleteTarget.id);
 
       if (error) throw error;
 
-      if (person.avatar_url) {
-        await removeAvatarByUrl(supabase, person.avatar_url);
+      if (deleteTarget.avatar_url) {
+        await removeAvatarByUrl(supabase, deleteTarget.avatar_url);
       }
 
       toast.success("Personnel deleted successfully");
+      setDeleteTarget(null);
       fetchPersonnel();
     } catch (error) {
       console.error("Error deleting personnel:", error);
       toast.error("Failed to delete personnel");
+    } finally {
+      setDeleting(false);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-10 h-10 border-4 border-maroon-700 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="max-w-5xl mx-auto space-y-5 animate-fadeIn">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Personnel</h1>
-          <p className="text-gray-500 mt-1">
-            Manage staff who receive documents.
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold text-ink tracking-tight">
+              Receiving Personnel
+            </h1>
+            <span className="px-2 py-0.5 rounded-full bg-rail border border-border text-xs font-mono font-medium text-ink-muted tabular-nums">
+              {personnel.length}
+            </span>
+          </div>
+          <p className="text-sm text-ink-muted mt-1">
+            Staff members shown as document receivers on public tracking slips.
           </p>
         </div>
-        <button type="button" onClick={() => openModal()} className="btn-primary">
-          <Plus size={18} />
+        <button
+          type="button"
+          onClick={() => openModal()}
+          className="btn-primary self-start sm:self-auto"
+        >
+          <Plus size={16} />
           <span>Add Personnel</span>
         </button>
       </div>
 
-      {/* Grid */}
-      {personnel.length > 0 ? (
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search
+          size={16}
+          className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-subtle pointer-events-none"
+        />
+        <input
+          type="text"
+          aria-label="Filter personnel"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Filter personnel by name…"
+          className="input"
+          style={{ paddingLeft: "2.5rem" }}
+        />
+      </div>
+
+      {/* Directory Grid */}
+      {loading ? (
+        <CardGridSkeleton cards={6} />
+      ) : filteredPersonnel.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {personnel.map((person) => (
-            <div key={person.id} className="card p-5">
-              <div className="flex items-start justify-between mb-4">
-                <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center overflow-hidden">
+          {filteredPersonnel.map((person) => (
+            <div
+              key={person.id}
+              className="card p-4 flex items-center justify-between gap-3"
+            >
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="w-12 h-12 bg-rail border border-border rounded-lg flex items-center justify-center overflow-hidden shrink-0">
                   {person.avatar_url ? (
                     <img
                       src={person.avatar_url}
@@ -219,148 +259,162 @@ const Personnel = () => {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <User size={28} className="text-gray-400" />
+                    <User size={20} className="text-ink-subtle" />
                   )}
                 </div>
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    onClick={() => openModal(person)}
-                    aria-label={`Edit ${person.name}`}
-                    className="p-2 text-gray-500 hover:text-maroon-700 hover:bg-maroon-50 rounded-lg transition-colors"
-                  >
-                    <Pencil size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(person)}
-                    aria-label={`Delete ${person.name}`}
-                    className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-sm text-ink truncate">
+                    {person.name}
+                  </h3>
+                  <p className="text-xs text-ink-muted mt-0.5">
+                    Receiving Officer
+                  </p>
                 </div>
               </div>
-              <h3 className="font-semibold text-gray-900">{person.name}</h3>
-              <p className="text-sm text-gray-500 mt-1">Staff Member</p>
+              <div className="flex items-center shrink-0">
+                <button
+                  type="button"
+                  onClick={() => openModal(person)}
+                  aria-label={`Edit ${person.name}`}
+                  className="icon-btn hover:text-maroon-700"
+                >
+                  <Pencil size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeleteTarget(person)}
+                  aria-label={`Delete ${person.name}`}
+                  className="icon-btn hover:text-[#991b1b] hover:bg-[#fdf1f1]"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="card p-8 text-center">
-          <Users size={40} className="text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500">No personnel yet</p>
-          <button
-            type="button"
-            onClick={() => openModal()}
-            className="text-maroon-700 hover:text-maroon-800 text-sm font-medium mt-2"
-          >
-            Add your first personnel
-          </button>
-        </div>
-      )}
-
-      {/* Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={closeModal} />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md animate-slideUp">
-            <div className="flex items-center justify-between p-6 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-900">
-                {editingPersonnel ? "Edit Personnel" : "Add Personnel"}
-              </h2>
-              <button
-                type="button"
-                onClick={closeModal}
-                aria-label="Close modal"
-                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleSubmit} className="p-6">
-              {/* Avatar Upload */}
-              <div className="mb-6">
-                <label className="label">Photo</label>
-                <div className="flex items-center gap-4">
-                  <div
-                    className="w-20 h-20 bg-gray-100 rounded-xl flex items-center justify-center overflow-hidden cursor-pointer hover:bg-gray-200 transition-colors"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    {avatarPreview ? (
-                      <img
-                        src={avatarPreview}
-                        alt="Preview"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <Upload size={24} className="text-gray-400" />
-                    )}
-                  </div>
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="btn-secondary text-sm"
-                    >
-                      Upload Photo
-                    </button>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Max 2MB, JPG, PNG, or WebP
-                    </p>
-                  </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                </div>
-              </div>
-
-              {/* Name */}
-              <div className="mb-6">
-                <label htmlFor="name" className="label">
-                  Full Name
-                </label>
-                <input
-                  id="name"
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  className="input"
-                  placeholder="Enter full name"
-                  required
-                />
-              </div>
-
-              <div className="flex gap-3">
+        <div className="card">
+          <EmptyState
+            icon={Users}
+            title={
+              searchQuery ? "No matching personnel" : "No personnel added yet"
+            }
+            description={
+              searchQuery
+                ? "Try clearing your search filter."
+                : "Add receiving staff members so tickets can record who accepted each document."
+            }
+            action={
+              !searchQuery ? (
                 <button
                   type="button"
-                  onClick={closeModal}
-                  className="btn-secondary flex-1"
+                  onClick={() => openModal()}
+                  className="btn-primary"
                 >
-                  Cancel
+                  <Plus size={16} />
+                  <span>Add Personnel</span>
                 </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="btn-primary flex-1"
-                >
-                  {submitting
-                    ? "Saving…"
-                    : editingPersonnel
-                      ? "Update"
-                      : "Create"}
-                </button>
-              </div>
-            </form>
-          </div>
+              ) : null
+            }
+          />
         </div>
       )}
+
+      {/* Add / Edit Modal */}
+      <Modal
+        open={modalOpen}
+        onClose={closeModal}
+        title={editingPersonnel ? "Edit Personnel" : "Add Personnel"}
+        closeDisabled={submitting}
+      >
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="label">Photo</label>
+            <div className="flex items-center gap-4">
+              <div
+                className="w-16 h-16 bg-rail border border-border rounded-lg flex items-center justify-center overflow-hidden cursor-pointer hover:border-border-strong transition-colors shrink-0"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {avatarPreview ? (
+                  <img
+                    src={avatarPreview}
+                    alt="Preview"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <Upload size={20} className="text-ink-subtle" />
+                )}
+              </div>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="btn-secondary text-xs"
+                >
+                  Upload Photo
+                </button>
+                <p className="text-xs text-ink-muted mt-1.5">
+                  Max 2MB · JPG, PNG, or WebP
+                </p>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="personnel-name" className="label">
+              Full Name *
+            </label>
+            <input
+              id="personnel-name"
+              type="text"
+              value={formData.name}
+              onChange={(e) =>
+                setFormData({ ...formData, name: e.target.value })
+              }
+              className="input"
+              placeholder="Enter full name"
+              required
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-1">
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={closeModal}
+              className="btn-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="btn-primary"
+            >
+              {submitting ? "Saving…" : editingPersonnel ? "Update" : "Create"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Delete Confirm Dialog */}
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+        title="Delete Personnel"
+        message={`Remove "${deleteTarget?.name}" from receiving personnel? Existing tickets assigned to them will remain in the registry.`}
+        confirmLabel="Delete Personnel"
+        variant="danger"
+        loading={deleting}
+      />
     </div>
   );
 };

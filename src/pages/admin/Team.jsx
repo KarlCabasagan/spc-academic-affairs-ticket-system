@@ -1,5 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import { useAuth } from "../../hooks/useAuth";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import { TableSkeleton } from "../../components/ui/Skeleton";
+import EmptyState from "../../components/ui/EmptyState";
 import {
   UserCog,
   User,
@@ -11,7 +15,6 @@ import {
   Search,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { useAuth } from "../../hooks/useAuth";
 
 const Team = () => {
   const { isSuperAdmin, user } = useAuth();
@@ -21,6 +24,7 @@ const Team = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [openMenuId, setOpenMenuId] = useState(null);
   const [busyMemberId, setBusyMemberId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const menuContainerRef = useRef(null);
 
   const fetchTeam = async () => {
@@ -132,24 +136,19 @@ const Team = () => {
     }
   };
 
-  const deleteUser = async (member) => {
-    if (!isSuperAdmin || !member.is_archived || busyMemberId) return;
-    if (
-      !confirm(
-        `Are you sure you want to permanently delete "${member.full_name || "this user"}"? This action cannot be undone.`,
-      )
-    )
-      return;
+  const handleConfirmDelete = async () => {
+    if (!isSuperAdmin || !deleteTarget?.is_archived || busyMemberId) return;
 
-    setBusyMemberId(member.id);
+    setBusyMemberId(deleteTarget.id);
     try {
       const { error } = await supabase
         .from("profiles")
         .delete()
-        .eq("id", member.id);
+        .eq("id", deleteTarget.id);
 
       if (error) throw error;
       toast.success("User deleted permanently");
+      setDeleteTarget(null);
       await fetchTeam();
     } catch (error) {
       console.error("Error deleting user:", error);
@@ -177,8 +176,7 @@ const Team = () => {
       const q = searchQuery.trim().toLowerCase();
       filtered = filtered.filter((m) => {
         const name = (m.full_name || "").toLowerCase();
-        const roleLabel =
-          m.role === "super_admin" ? "super admin" : "admin";
+        const roleLabel = m.role === "super_admin" ? "super admin" : "admin";
         return name.includes(q) || roleLabel.includes(q);
       });
     }
@@ -186,288 +184,295 @@ const Team = () => {
     return filtered;
   }, [team, filter, searchQuery]);
 
-  const getStatusBadge = (member) => {
-    if (member.is_archived) {
-      return (
-        <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
-          Archived
-        </span>
-      );
-    }
-    return (
-      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-600 rounded-full">
-        Active
-      </span>
-    );
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-10 h-10 border-4 border-maroon-700 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  const counts = useMemo(
+    () => ({
+      active: team.filter((m) => !m.is_archived).length,
+      archived: team.filter((m) => m.is_archived).length,
+      all: team.length,
+    }),
+    [team],
+  );
 
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="max-w-4xl mx-auto space-y-5 animate-fadeIn">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Team</h1>
-          <p className="text-gray-500 mt-1">
-            Manage admin accounts and access.
-          </p>
+      <div>
+        <h1 className="text-2xl font-bold text-ink tracking-tight">
+          Team &amp; Access
+        </h1>
+        <p className="text-sm text-ink-muted mt-1">
+          Manage OVPAA administrator roles, archive inactive staff, and protect
+          system access.
+        </p>
+      </div>
+
+      {/* Search & Status Tabs */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search
+            size={16}
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-subtle pointer-events-none"
+          />
+          <input
+            type="text"
+            aria-label="Search team members"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by name or role…"
+            className="input"
+            style={{ paddingLeft: "2.5rem" }}
+          />
+        </div>
+
+        <div
+          role="tablist"
+          aria-label="Filter team accounts"
+          className="flex items-center gap-1.5"
+        >
+          {[
+            { key: "active", label: "Active", count: counts.active },
+            { key: "archived", label: "Archived", count: counts.archived },
+            { key: "all", label: "All", count: counts.all },
+          ].map((tab) => {
+            const active = filter === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setFilter(tab.key)}
+                className={`inline-flex items-center gap-2 px-3 py-1.5 min-h-[38px] rounded-md text-xs font-semibold cursor-pointer ${
+                  active
+                    ? "bg-maroon-700 text-white"
+                    : "bg-surface border border-border text-ink-muted hover:text-ink hover:bg-rail/60"
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span
+                  className={`px-1.5 py-0.5 rounded-full text-[11px] font-mono tabular-nums ${
+                    active
+                      ? "bg-white/20 text-white"
+                      : "bg-rail text-ink-muted"
+                  }`}
+                >
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="relative max-w-md">
-        <Search
-          size={18}
-          className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-        />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search by name or role…"
-          className="input w-full"
-          style={{ paddingLeft: "3rem" }}
-        />
-      </div>
+      {/* Team Ledger */}
+      {loading ? (
+        <TableSkeleton rows={5} />
+      ) : filteredTeam.length > 0 ? (
+        <div className="card divide-y divide-border">
+          {filteredTeam.map((member) => {
+            const isPrimaryAdmin = member.id === primarySuperAdmin?.id;
+            const isBusy = busyMemberId === member.id;
+            const isMenuOpen = openMenuId === member.id;
+            const displayName = member.full_name || "Unnamed User";
 
-      {/* Filter Tabs */}
-      <div className="flex gap-2 border-b border-gray-200 pb-2">
-        {[
-          { key: "active", label: "Active" },
-          { key: "archived", label: "Archived" },
-          { key: "all", label: "All" },
-        ].map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setFilter(tab.key)}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-              filter === tab.key
-                ? "bg-maroon-700 text-white"
-                : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            {tab.label}
-            <span className="ml-2 text-xs opacity-75 tabular-nums">
-              (
-              {
-                team.filter((m) => {
-                  switch (tab.key) {
-                    case "active":
-                      return !m.is_archived;
-                    case "archived":
-                      return m.is_archived;
-                    default:
-                      return true;
-                  }
-                }).length
-              }
-              )
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {/* Team List */}
-      <div className="card">
-        {filteredTeam.length > 0 ? (
-          <div className="divide-y divide-gray-100">
-            {filteredTeam.map((member) => {
-              const isPrimaryAdmin = member.id === primarySuperAdmin?.id;
-              const isBusy = busyMemberId === member.id;
-              const isMenuOpen = openMenuId === member.id;
-              const displayName = member.full_name || "Unnamed User";
-
-              return (
-                <div
-                  key={member.id}
-                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-gray-50 gap-4"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center overflow-hidden">
-                      {member.avatar_url ? (
-                        <img
-                          src={member.avatar_url}
-                          alt={displayName}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <User size={22} className="text-gray-400" />
+            return (
+              <div
+                key={member.id}
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-5 py-4 hover:bg-canvas transition-colors"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-11 h-11 bg-rail border border-border rounded-lg flex items-center justify-center overflow-hidden shrink-0">
+                    {member.avatar_url ? (
+                      <img
+                        src={member.avatar_url}
+                        alt={displayName}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <User size={19} className="text-ink-subtle" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-sm text-ink truncate">
+                        {displayName}
+                      </p>
+                      {isPrimaryAdmin && (
+                        <span className="px-2 py-0.5 text-[11px] font-semibold bg-maroon-50 border border-maroon-200 text-maroon-700 rounded-full">
+                          Primary
+                        </span>
+                      )}
+                      {member.id === user?.id && (
+                        <span className="text-xs text-ink-muted">(You)</span>
                       )}
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium text-gray-900">
-                          {displayName}
-                        </p>
-                        {isPrimaryAdmin && (
-                          <span className="px-2 py-0.5 text-xs font-medium bg-maroon-100 text-maroon-700 rounded-full">
-                            Primary
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        {getStatusBadge(member)}
-                        <span
-                          className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-                            member.role === "super_admin"
-                              ? "bg-maroon-100 text-maroon-700"
-                              : "bg-gray-100 text-gray-600"
-                          }`}
-                        >
-                          <Shield size={12} />
-                          {member.role === "super_admin"
-                            ? "Super Admin"
-                            : "Admin"}
-                        </span>
-                      </div>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      {member.is_archived ? (
+                        <span className="badge">Archived</span>
+                      ) : (
+                        <span className="badge-approved">Active</span>
+                      )}
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${
+                          member.role === "super_admin"
+                            ? "bg-maroon-50 text-maroon-700 border-maroon-200"
+                            : "bg-rail text-ink-muted border-border"
+                        }`}
+                      >
+                        <Shield size={11} />
+                        {member.role === "super_admin"
+                          ? "Super Admin"
+                          : "Admin"}
+                      </span>
                     </div>
                   </div>
-
-                  {/* Actions - Only for super admin and not self */}
-                  {isSuperAdmin && member.id !== user?.id && (
-                    <div className="flex items-center gap-2 ml-auto sm:ml-0">
-                      {/* Accessible Role Dropdown - Not for primary admin */}
-                      {!member.is_archived && !isPrimaryAdmin && (
-                        <div
-                          className="relative"
-                          ref={isMenuOpen ? menuContainerRef : null}
-                        >
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            aria-haspopup="menu"
-                            aria-expanded={isMenuOpen}
-                            onClick={() =>
-                              setOpenMenuId(isMenuOpen ? null : member.id)
-                            }
-                            className="btn-secondary text-sm flex items-center gap-1"
-                          >
-                            <span>
-                              {member.role === "super_admin"
-                                ? "Super Admin"
-                                : "Admin"}
-                            </span>
-                            <ChevronDown
-                              size={14}
-                              className={`transition-transform ${
-                                isMenuOpen ? "rotate-180" : ""
-                              }`}
-                            />
-                          </button>
-                          {isMenuOpen && (
-                            <div
-                              role="menu"
-                              aria-label={`Change role for ${displayName}`}
-                              className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 origin-top-right"
-                            >
-                              <button
-                                type="button"
-                                role="menuitem"
-                                disabled={isBusy}
-                                onClick={() =>
-                                  updateUserRole(member.id, "admin")
-                                }
-                                className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${
-                                  member.role === "admin"
-                                    ? "text-maroon-700 font-medium"
-                                    : "text-gray-700"
-                                }`}
-                              >
-                                Admin
-                              </button>
-                              <button
-                                type="button"
-                                role="menuitem"
-                                disabled={isBusy}
-                                onClick={() =>
-                                  updateUserRole(member.id, "super_admin")
-                                }
-                                className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${
-                                  member.role === "super_admin"
-                                    ? "text-maroon-700 font-medium"
-                                    : "text-gray-700"
-                                }`}
-                              >
-                                Super Admin
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Archive/Unarchive - Not for primary admin */}
-                      {!isPrimaryAdmin && (
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => toggleArchive(member)}
-                          className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${
-                            member.is_archived
-                              ? "text-gray-500 hover:text-blue-600 hover:bg-blue-50"
-                              : "text-gray-500 hover:text-yellow-600 hover:bg-yellow-50"
-                          }`}
-                          aria-label={
-                            member.is_archived
-                              ? `Unarchive ${displayName}`
-                              : `Archive ${displayName}`
-                          }
-                          title={
-                            member.is_archived
-                              ? "Unarchive & Activate"
-                              : "Archive & Deactivate"
-                          }
-                        >
-                          {member.is_archived ? (
-                            <ArchiveRestore size={18} />
-                          ) : (
-                            <Archive size={18} />
-                          )}
-                        </button>
-                      )}
-
-                      {/* Delete (only for archived) */}
-                      {member.is_archived && (
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => deleteUser(member)}
-                          className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                          aria-label={`Delete ${displayName} permanently`}
-                          title="Delete permanently"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Self indicator */}
-                  {member.id === user?.id && (
-                    <span className="text-xs text-gray-400 italic">You</span>
-                  )}
                 </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="p-8 text-center">
-            <UserCog size={40} className="text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500">
-              {searchQuery
-                ? "No team members match your search"
-                : `No ${filter !== "all" ? filter : ""} team members`}
-            </p>
-          </div>
-        )}
-      </div>
+
+                {/* Actions */}
+                {isSuperAdmin && member.id !== user?.id && (
+                  <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
+                    {!member.is_archived && !isPrimaryAdmin && (
+                      <div
+                        className="relative"
+                        ref={isMenuOpen ? menuContainerRef : null}
+                      >
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          aria-haspopup="menu"
+                          aria-expanded={isMenuOpen}
+                          onClick={() =>
+                            setOpenMenuId(isMenuOpen ? null : member.id)
+                          }
+                          className="btn-secondary min-h-[38px] px-3 py-1.5 text-xs"
+                        >
+                          <span>
+                            {member.role === "super_admin"
+                              ? "Super Admin"
+                              : "Admin"}
+                          </span>
+                          <ChevronDown
+                            size={14}
+                            className={`transition-transform duration-150 ${
+                              isMenuOpen ? "rotate-180" : ""
+                            }`}
+                          />
+                        </button>
+                        {isMenuOpen && (
+                          <div
+                            role="menu"
+                            aria-label={`Change role for ${displayName}`}
+                            className="absolute right-0 mt-1.5 w-40 bg-surface border border-border rounded-lg shadow-[var(--shadow-dropdown)] py-1 z-20 origin-top-right animate-popover"
+                          >
+                            <button
+                              type="button"
+                              role="menuitem"
+                              disabled={isBusy}
+                              onClick={() => updateUserRole(member.id, "admin")}
+                              className={`w-full px-3.5 py-2 text-left text-xs hover:bg-rail transition-colors cursor-pointer ${
+                                member.role === "admin"
+                                  ? "text-maroon-700 font-semibold"
+                                  : "text-ink"
+                              }`}
+                            >
+                              Admin
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              disabled={isBusy}
+                              onClick={() =>
+                                updateUserRole(member.id, "super_admin")
+                              }
+                              className={`w-full px-3.5 py-2 text-left text-xs hover:bg-rail transition-colors cursor-pointer ${
+                                member.role === "super_admin"
+                                  ? "text-maroon-700 font-semibold"
+                                  : "text-ink"
+                              }`}
+                            >
+                              Super Admin
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {!isPrimaryAdmin && (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => toggleArchive(member)}
+                        className={`icon-btn ${
+                          member.is_archived
+                            ? "hover:text-[#1e40af] hover:bg-[#eff4fb]"
+                            : "hover:text-[#92400e] hover:bg-[#fef9ec]"
+                        }`}
+                        aria-label={
+                          member.is_archived
+                            ? `Unarchive ${displayName}`
+                            : `Archive ${displayName}`
+                        }
+                        title={
+                          member.is_archived
+                            ? "Unarchive & Activate"
+                            : "Archive & Deactivate"
+                        }
+                      >
+                        {member.is_archived ? (
+                          <ArchiveRestore size={17} />
+                        ) : (
+                          <Archive size={17} />
+                        )}
+                      </button>
+                    )}
+
+                    {member.is_archived && (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => setDeleteTarget(member)}
+                        className="icon-btn hover:text-[#991b1b] hover:bg-[#fdf1f1]"
+                        aria-label={`Delete ${displayName} permanently`}
+                        title="Delete permanently"
+                      >
+                        <Trash2 size={17} />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="card">
+          <EmptyState
+            icon={UserCog}
+            title={
+              searchQuery
+                ? "No matching team members"
+                : `No ${filter !== "all" ? filter : ""} accounts`
+            }
+            description={
+              searchQuery
+                ? "Try clearing your search input."
+                : "Accounts appear here once staff members register on the portal."
+            }
+          />
+        </div>
+      )}
+
+      {/* Permanent Delete Confirm */}
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+        title="Delete Archived Account"
+        message={`Permanently remove "${deleteTarget?.full_name || "this user"}" from the profiles directory? This cannot be undone.`}
+        confirmLabel="Delete Account"
+        variant="danger"
+        loading={Boolean(busyMemberId && deleteTarget)}
+      />
     </div>
   );
 };
