@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link, Navigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import {
   Eye,
@@ -19,8 +19,17 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const { signIn, signUp, resetPassword, authNotice, clearAuthNotice } =
-    useAuth();
+  const {
+    signIn,
+    signUp,
+    resetPassword,
+    user,
+    profile,
+    loading: authLoading,
+    profileLoading,
+    authNotice,
+    clearAuthNotice,
+  } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -30,6 +39,17 @@ const Login = () => {
     (location.state?.disabledAccount
       ? "Your account has been deactivated or archived. Please contact a Super Admin."
       : null);
+
+  if (
+    !authLoading &&
+    !profileLoading &&
+    user &&
+    profile &&
+    !profile.is_archived &&
+    profile.is_active !== false
+  ) {
+    return <Navigate to={from} replace />;
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();

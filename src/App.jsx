@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -10,6 +10,7 @@ import DashboardLayout from "./layouts/DashboardLayout";
 // Public Pages
 import LandingPage from "./pages/public/LandingPage";
 import TrackTicket from "./pages/public/TrackTicket";
+import NotFound from "./pages/public/NotFound";
 
 // Auth Pages
 import Login from "./pages/auth/Login";
@@ -35,7 +36,9 @@ function App() {
           {/* Public Routes */}
           <Route element={<PublicLayout />}>
             <Route path="/" element={<LandingPage />} />
+            <Route path="/track" element={<Navigate to="/" replace />} />
             <Route path="/track/:ticketCode" element={<TrackTicket />} />
+            <Route path="*" element={<NotFound />} />
           </Route>
 
           {/* Auth Routes */}
@@ -51,6 +54,7 @@ function App() {
               </ProtectedRoute>
             }
           >
+            <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="tickets" element={<Tickets />} />
             <Route path="tickets/create" element={<CreateTicket />} />
@@ -91,6 +95,7 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
       </BrowserRouter>
