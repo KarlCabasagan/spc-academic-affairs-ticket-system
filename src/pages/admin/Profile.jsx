@@ -6,7 +6,7 @@ import {
   uploadAvatarFile,
   removeAvatarByUrl,
 } from "../../lib/storageUtils";
-import { User, Upload, Save, Lock } from "lucide-react";
+import { User, Upload, Save, Lock, Eye, EyeOff } from "lucide-react";
 import toast from "react-hot-toast";
 
 const formatRoleLabel = (role) => {
@@ -28,6 +28,8 @@ const Profile = () => {
     newPassword: "",
     confirmPassword: "",
   });
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
 
   const fileInputRef = useRef(null);
@@ -46,7 +48,6 @@ const Profile = () => {
     };
   }, []);
 
-  // Sync local form fields when profile hydrates or updates externally
   useEffect(() => {
     if (!profile) return;
     setFullName(profile.full_name || "");
@@ -121,6 +122,10 @@ const Profile = () => {
     }
   };
 
+  const passwordMismatch =
+    Boolean(passwordData.confirmPassword) &&
+    passwordData.newPassword !== passwordData.confirmPassword;
+
   const handleChangePassword = async (e) => {
     e.preventDefault();
 
@@ -148,17 +153,28 @@ const Profile = () => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8 animate-fadeIn">
-      {/* Profile Section */}
-      <div className="card p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-6">
-          Profile Information
-        </h2>
-        <form onSubmit={handleSaveProfile} className="space-y-6">
-          {/* Avatar */}
-          <div className="flex items-center gap-6">
+    <div className="max-w-3xl mx-auto space-y-6 animate-fadeIn">
+      <div>
+        <h1 className="text-2xl font-bold text-ink tracking-tight">
+          Profile Settings
+        </h1>
+        <p className="text-sm text-ink-muted mt-1">
+          Manage your staff display identity, avatar, and account security.
+        </p>
+      </div>
+
+      {/* Identity & Avatar Section */}
+      <section className="card overflow-hidden">
+        <div className="px-6 py-4 border-b border-border">
+          <h2 className="text-sm font-semibold text-ink">
+            Profile Information
+          </h2>
+        </div>
+
+        <form onSubmit={handleSaveProfile} className="p-6 space-y-5">
+          <div className="flex items-center gap-5">
             <div
-              className="w-24 h-24 bg-gray-100 rounded-2xl flex items-center justify-center overflow-hidden cursor-pointer hover:bg-gray-200 transition-colors"
+              className="w-20 h-20 bg-rail border border-border rounded-lg flex items-center justify-center overflow-hidden cursor-pointer hover:border-border-strong transition-colors shrink-0"
               onClick={() => fileInputRef.current?.click()}
             >
               {avatarPreview ? (
@@ -168,7 +184,7 @@ const Profile = () => {
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <User size={36} className="text-gray-400" />
+                <User size={30} className="text-ink-subtle" />
               )}
             </div>
             <div>
@@ -177,11 +193,11 @@ const Profile = () => {
                 onClick={() => fileInputRef.current?.click()}
                 className="btn-secondary"
               >
-                <Upload size={18} />
+                <Upload size={16} />
                 <span>Upload Photo</span>
               </button>
-              <p className="text-sm text-gray-400 mt-2">
-                Max 2MB, JPG, PNG, or WebP
+              <p className="text-xs text-ink-muted mt-1.5">
+                Max 2MB · JPG, PNG, or WebP
               </p>
             </div>
             <input
@@ -193,128 +209,163 @@ const Profile = () => {
             />
           </div>
 
-          {/* Full Name */}
-          <div>
-            <label htmlFor="fullName" className="label">
-              Full Name
-            </label>
-            <input
-              id="fullName"
-              type="text"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              className="input"
-              placeholder="Enter your full name"
-              required
-            />
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
+              <label htmlFor="fullName" className="label">
+                Full Name *
+              </label>
+              <input
+                id="fullName"
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="input"
+                placeholder="Enter your full name"
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="profileEmail" className="label">
+                Email Address
+              </label>
+              <input
+                id="profileEmail"
+                type="email"
+                value={user?.email || ""}
+                className="input"
+                disabled
+              />
+              <p className="text-xs text-ink-muted mt-1">
+                Email cannot be changed
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="profileRole" className="label">
+                Assigned Role
+              </label>
+              <input
+                id="profileRole"
+                type="text"
+                value={formatRoleLabel(profile?.role)}
+                className="input"
+                disabled
+              />
+            </div>
           </div>
 
-          {/* Email (Read Only) */}
-          <div>
-            <label htmlFor="profileEmail" className="label">
-              Email Address
-            </label>
-            <input
-              id="profileEmail"
-              type="email"
-              value={user?.email || ""}
-              className="input bg-gray-50"
-              disabled
-            />
-            <p className="text-sm text-gray-400 mt-1">
-              Email cannot be changed
-            </p>
+          <div className="pt-2 flex justify-end">
+            <button type="submit" disabled={saving} className="btn-primary">
+              <Save size={16} />
+              <span>{saving ? "Saving…" : "Save Changes"}</span>
+            </button>
           </div>
-
-          {/* Role (Read Only) */}
-          <div>
-            <label htmlFor="profileRole" className="label">
-              Role
-            </label>
-            <input
-              id="profileRole"
-              type="text"
-              value={formatRoleLabel(profile?.role)}
-              className="input bg-gray-50"
-              disabled
-            />
-          </div>
-
-          <button type="submit" disabled={saving} className="btn-primary">
-            {saving ? (
-              "Saving…"
-            ) : (
-              <>
-                <Save size={18} />
-                <span>Save Changes</span>
-              </>
-            )}
-          </button>
         </form>
-      </div>
+      </section>
 
       {/* Password Section */}
-      <div className="card p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-6">
-          Change Password
-        </h2>
-        <form onSubmit={handleChangePassword} className="space-y-4">
-          <div>
-            <label htmlFor="newPassword" className="label">
-              New Password
-            </label>
-            <input
-              id="newPassword"
-              type="password"
-              value={passwordData.newPassword}
-              onChange={(e) =>
-                setPasswordData({
-                  ...passwordData,
-                  newPassword: e.target.value,
-                })
-              }
-              className="input"
-              placeholder="Minimum 6 characters"
-              minLength={6}
-              required
-            />
+      <section className="card overflow-hidden">
+        <div className="px-6 py-4 border-b border-border">
+          <h2 className="text-sm font-semibold text-ink">
+            Security &amp; Password
+          </h2>
+        </div>
+
+        <form onSubmit={handleChangePassword} className="p-6 space-y-4">
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="newPassword" className="label">
+                New Password
+              </label>
+              <div className="relative">
+                <input
+                  id="newPassword"
+                  type={showNewPassword ? "text" : "password"}
+                  value={passwordData.newPassword}
+                  onChange={(e) =>
+                    setPasswordData({
+                      ...passwordData,
+                      newPassword: e.target.value,
+                    })
+                  }
+                  className="input pr-12"
+                  placeholder="Minimum 6 characters"
+                  minLength={6}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword((prev) => !prev)}
+                  aria-label={
+                    showNewPassword ? "Hide new password" : "Show new password"
+                  }
+                  className="icon-btn absolute right-0.5 top-1/2 -translate-y-1/2"
+                >
+                  {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="confirmPassword" className="label">
+                Confirm New Password
+              </label>
+              <div className="relative">
+                <input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? "text" : "password"}
+                  value={passwordData.confirmPassword}
+                  onChange={(e) =>
+                    setPasswordData({
+                      ...passwordData,
+                      confirmPassword: e.target.value,
+                    })
+                  }
+                  className={`input pr-12 ${passwordMismatch ? "input-error" : ""}`}
+                  placeholder="Re-enter new password"
+                  minLength={6}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((prev) => !prev)}
+                  aria-label={
+                    showConfirmPassword
+                      ? "Hide confirmation password"
+                      : "Show confirmation password"
+                  }
+                  className="icon-btn absolute right-0.5 top-1/2 -translate-y-1/2"
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff size={18} />
+                  ) : (
+                    <Eye size={18} />
+                  )}
+                </button>
+              </div>
+              {passwordMismatch && (
+                <p className="text-xs text-[#b91c1c] mt-1.5">
+                  Passwords do not match.
+                </p>
+              )}
+            </div>
           </div>
-          <div>
-            <label htmlFor="confirmPassword" className="label">
-              Confirm New Password
-            </label>
-            <input
-              id="confirmPassword"
-              type="password"
-              value={passwordData.confirmPassword}
-              onChange={(e) =>
-                setPasswordData({
-                  ...passwordData,
-                  confirmPassword: e.target.value,
-                })
-              }
-              className="input"
-              placeholder="Re-enter new password"
-              minLength={6}
-              required
-            />
+
+          <div className="pt-2 flex justify-end">
+            <button
+              type="submit"
+              disabled={changingPassword || passwordMismatch}
+              className="btn-primary"
+            >
+              <Lock size={16} />
+              <span>
+                {changingPassword ? "Changing…" : "Change Password"}
+              </span>
+            </button>
           </div>
-          <button
-            type="submit"
-            disabled={changingPassword}
-            className="btn-primary"
-          >
-            {changingPassword ? (
-              "Changing…"
-            ) : (
-              <>
-                <Lock size={18} />
-                <span>Change Password</span>
-              </>
-            )}
-          </button>
         </form>
-      </div>
+      </section>
     </div>
   );
 };
